@@ -29,11 +29,38 @@ local.properties
 # ===========================
 # Gradle
 # ===========================
-.gradle/
+
+# Build outputs
 build/
+**/build/
+
+# Gradle cache & metadata directories
+.gradle/
+**/.gradle/
+
+# Gradle wrapper — keep the jar & properties, ignore downloaded distributions
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+gradle/wrapper/dists/
+
+# Gradle user-home caches (when $GRADLE_USER_HOME is inside the project)
+.gradle/caches/
+.gradle/daemon/
+.gradle/native/
+.gradle/notifications/
+
+# Task name cache & settings override
 gradle-app.setting
-!gradle-wrapper.jar
 .gradletasknamecache
+
+# Build scan plugin agreement
+.gradle/config.properties
+
+# Generated / local Gradle files
+gradle.properties.local
+
+# Kotlin/Gradle compilation caches
+**/.kotlin/
 
 # ===========================
 # Android Studio / IntelliJ
