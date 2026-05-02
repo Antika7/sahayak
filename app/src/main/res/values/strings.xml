@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sahayak</string>
+    <string name="help_physical_form">Help with Physical Form</string>
+    <string name="start_sentinel">Start Screen Sentinel (Scam Blocker)</string>
+    <string name="camera_permission_required">Camera permission is required.</string>
+    <string name="grant_overlay_permission">Please grant overlay permission.</string>
+    <string name="form_captured">Form captured. Analyzing…</string>
+    <string name="capture_failed">Failed to capture photo.</string>
+</resources>

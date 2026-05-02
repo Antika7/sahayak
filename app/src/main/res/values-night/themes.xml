@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    values-night/themes.xml
+    Android automatically picks this file when the device is in dark mode.
+    We just override the root theme to point to the dark variant.
+-->
+<resources>
+    <style name="Theme.Sahayak" parent="Theme.Sahayak.Dark" />
+</resources>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary: Saffron / Warm Orange (trust + accessibility for seniors) -->
+    <color name="sahayak_orange_10">#3D1A00</color>
+    <color name="sahayak_orange_40">#C95B00</color>
+    <color name="sahayak_orange_80">#FFB877</color>
+    <color name="sahayak_orange_90">#FFDCC2</color>
+    <color name="sahayak_orange_99">#FFF8F5</color>
+
+    <!-- Secondary: Deep Indigo (calm, trustworthy) -->
+    <color name="sahayak_indigo_10">#0D0033</color>
+    <color name="sahayak_indigo_40">#4A3B99</color>
+    <color name="sahayak_indigo_80">#C4B8FF</color>
+    <color name="sahayak_indigo_90">#E5DEFF</color>
+
+    <!-- Tertiary: Leaf Green (positive, safe) -->
+    <color name="sahayak_green_40">#3A7D44</color>
+    <color name="sahayak_green_80">#9EDFAB</color>
+    <color name="sahayak_green_90">#D2F5D8</color>
+
+    <!-- Neutral surfaces -->
+    <color name="sahayak_neutral_10">#1C1B1F</color>
+    <color name="sahayak_neutral_20">#313033</color>
+    <color name="sahayak_neutral_90">#E6E1E5</color>
+    <color name="sahayak_neutral_95">#F4EFF4</color>
+    <color name="sahayak_neutral_99">#FFFBFE</color>
+
+    <!-- Error -->
+    <color name="sahayak_error_40">#B3261E</color>
+    <color name="sahayak_error_80">#F2B8B5</color>
+    <color name="sahayak_error_90">#F9DEDC</color>
+</resources>

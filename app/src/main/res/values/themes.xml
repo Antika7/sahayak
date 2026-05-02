@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        Theme.Sahayak — Light theme
+        Uses Material3 DayNight bridge so the app respects system light/dark mode.
+        Primary   : Saffron orange  — warm & trustworthy
+        Secondary : Deep indigo     — calm
+        Tertiary  : Leaf green      — positive / safe
+    -->
+    <style name="Theme.Sahayak" parent="Theme.Material3.DayNight.NoActionBar">
+
+        <!-- Primary brand color -->
+        <item name="colorPrimary">@color/sahayak_orange_40</item>
+        <item name="colorOnPrimary">@color/sahayak_neutral_99</item>
+        <item name="colorPrimaryContainer">@color/sahayak_orange_90</item>
+        <item name="colorOnPrimaryContainer">@color/sahayak_orange_10</item>
+
+        <!-- Secondary brand color -->
+        <item name="colorSecondary">@color/sahayak_indigo_40</item>
+        <item name="colorOnSecondary">@color/sahayak_neutral_99</item>
+        <item name="colorSecondaryContainer">@color/sahayak_indigo_90</item>
+        <item name="colorOnSecondaryContainer">@color/sahayak_indigo_10</item>
+
+        <!-- Tertiary brand color -->
+        <item name="colorTertiary">@color/sahayak_green_40</item>
+        <item name="colorOnTertiary">@color/sahayak_neutral_99</item>
+        <item name="colorTertiaryContainer">@color/sahayak_green_90</item>
+        <item name="colorOnTertiaryContainer">@color/sahayak_indigo_10</item>
+
+        <!-- Error -->
+        <item name="colorError">@color/sahayak_error_40</item>
+        <item name="colorOnError">@color/sahayak_neutral_99</item>
+        <item name="colorErrorContainer">@color/sahayak_error_90</item>
+        <item name="colorOnErrorContainer">@color/sahayak_orange_10</item>
+
+        <!-- Background / surface -->
+        <item name="android:colorBackground">@color/sahayak_neutral_99</item>
+        <item name="colorOnBackground">@color/sahayak_neutral_10</item>
+        <item name="colorSurface">@color/sahayak_neutral_99</item>
+        <item name="colorOnSurface">@color/sahayak_neutral_10</item>
+        <item name="colorSurfaceVariant">@color/sahayak_orange_99</item>
+        <item name="colorOnSurfaceVariant">@color/sahayak_orange_10</item>
+        <item name="colorOutline">@color/sahayak_neutral_90</item>
+
+        <!-- Status bar matches primary -->
+        <item name="android:statusBarColor">@color/sahayak_orange_40</item>
+        <item name="android:navigationBarColor">@color/sahayak_neutral_99</item>
+
+        <!-- Large, accessible typography (senior-friendly) -->
+        <item name="android:textAppearanceLarge">@style/TextAppearance.Sahayak.Large</item>
+        <item name="android:textAppearanceMedium">@style/TextAppearance.Sahayak.Medium</item>
+        <item name="android:textAppearanceSmall">@style/TextAppearance.Sahayak.Small</item>
+    </style>
+
+    <!-- Dark variant — automatically used when system is in dark mode -->
+    <style name="Theme.Sahayak.Dark" parent="Theme.Sahayak">
+        <item name="colorPrimary">@color/sahayak_orange_80</item>
+        <item name="colorOnPrimary">@color/sahayak_orange_10</item>
+        <item name="colorPrimaryContainer">@color/sahayak_orange_40</item>
+        <item name="colorOnPrimaryContainer">@color/sahayak_orange_90</item>
+
+        <item name="colorSecondary">@color/sahayak_indigo_80</item>
+        <item name="colorOnSecondary">@color/sahayak_indigo_10</item>
+        <item name="colorSecondaryContainer">@color/sahayak_indigo_40</item>
+        <item name="colorOnSecondaryContainer">@color/sahayak_indigo_90</item>
+
+        <item name="colorTertiary">@color/sahayak_green_80</item>
+        <item name="colorOnTertiary">@color/sahayak_green_40</item>
+        <item name="colorTertiaryContainer">@color/sahayak_green_40</item>
+        <item name="colorOnTertiaryContainer">@color/sahayak_green_90</item>
+
+        <item name="android:colorBackground">@color/sahayak_neutral_10</item>
+        <item name="colorOnBackground">@color/sahayak_neutral_90</item>
+        <item name="colorSurface">@color/sahayak_neutral_10</item>
+        <item name="colorOnSurface">@color/sahayak_neutral_90</item>
+        <item name="colorSurfaceVariant">@color/sahayak_neutral_20</item>
+        <item name="colorOnSurfaceVariant">@color/sahayak_neutral_90</item>
+
+        <item name="android:statusBarColor">@color/sahayak_neutral_10</item>
+        <item name="android:navigationBarColor">@color/sahayak_neutral_10</item>
+    </style>
+
+    <!-- Senior-friendly text sizes -->
+    <style name="TextAppearance.Sahayak.Large" parent="TextAppearance.Material3.HeadlineLarge">
+        <item name="android:textSize">28sp</item>
+    </style>
+    <style name="TextAppearance.Sahayak.Medium" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:textSize">20sp</item>
+    </style>
+    <style name="TextAppearance.Sahayak.Small" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textSize">16sp</item>
+    </style>
+
+</resources>
