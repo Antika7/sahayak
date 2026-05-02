@@ -1,0 +1,84 @@
+# ===========================
+# Android
+# ===========================
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# ===========================
+# Kotlin / Java
+# ===========================
+*.class
+*.jar
+*.war
+*.ear
+*.aar
+
+# ===========================
+# Gradle
+# ===========================
+.gradle/
+build/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+# ===========================
+# Android Studio / IntelliJ
+# ===========================
+*.iws
+*.ipr
+out/
+.idea/
+*.orig
+
+# ===========================
+# OS Generated Files
+# ===========================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Linux
+*~
+
+# ===========================
+# ML Model Files
+# ===========================
+# Gemma and other large model binaries should NEVER be committed to Git.
+# Use `adb push` to load them onto the device/emulator manually.
+*.bin
+*.tflite
+*.task
+*.gguf
+*.ggml
+models/
+
+# ===========================
+# Sensitive / Local Config
+# ===========================
+# API keys, signing configs, local secrets
+keystore.properties
+*.keystore
+*.jks
+google-services.json
