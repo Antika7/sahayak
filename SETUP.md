@@ -53,12 +53,18 @@ Running a 2B-parameter model on an emulator requires significantly more RAM than
 ## Step 3 — Download the Gemma Model
 
 You need a MediaPipe-compatible Gemma `.task` model file.
+You need a MediaPipe-compatible Gemma `.task` bundle.
 
 1. Go to the [Gemma 4 LiteRT page on Hugging Face](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/main/gemma-4-E2B-it-web.task).
 2. Download the **Gemma 4 E2B Task Bundle**:
    - Filename: `gemma-4-E2B-it-web.task`
    - Size: ~2.0 GB
    - > ⚠️ Do **not** download `.tar.gz` (Transformers) or raw `.litertlm` files. You need the `.task` bundle.
+1. Go to the [Gemma models page on Kaggle](https://www.kaggle.com/models/google/gemma/frameworks/mediapipe).
+   - You will need a free Kaggle account and must accept the Gemma usage terms.
+2. Download the **Gemma 4 2B Instruction-Tuned Web** variant:
+   - Filename: `gemma-4-E2B-it-web.task`
+   - > ⚠️ Do **not** download the GPU variant for the emulator — emulators run on CPU only.
 
 ---
 
@@ -74,6 +80,29 @@ The model file is too large to bundle in the APK. Use Android Studio's **Device 
 5. Select your downloaded `gemma-4-E2B-it-web.task` file. (This takes a few minutes).
 6. Once uploaded, right-click the file in the Device Explorer, select **Rename**, and change it exactly to:
    `gemma_model.bin`
+2. Open a terminal:
+   - **Windows:** Search for **Command Prompt** or **PowerShell**.
+   - **Mac/Linux:** Open **Terminal**.
+3. Verify ADB can see your emulator:
+   ```bash
+   adb devices
+   ```
+   You should see something like `emulator-5554  device`.
+
+4. Push the model file to the emulator:
+   ```bash
+   # Windows — replace the path with your actual download location
+   adb push C:\Users\YourName\Downloads\gemma-4-E2B-it-web.task /data/local/tmp/gemma-4-E2B-it-web.task
+
+   # Mac / Linux
+   adb push ~/Downloads/gemma-4-E2B-it-web.task /data/local/tmp/gemma-4-E2B-it-web.task
+   ```
+
+5. Verify the file was pushed successfully:
+   ```bash
+   adb shell ls -lh /data/local/tmp/gemma-4-E2B-it-web.task
+   ```
+   You should see the file listed in `/data/local/tmp/`.
 
 ---
 
@@ -85,15 +114,15 @@ The model initialization is commented out by default. Uncomment it in `MainActiv
 2. Find these lines (around line 48):
    ```kotlin
    // Initialize AI in background (Ensure model file is pushed to device storage)
-   // For hackathon: adb push model.bin /data/local/tmp/
-   // gemmaEngine.initialize("/data/local/tmp/gemma_model.bin")
+   // For hackathon: adb push gemma-4-E2B-it-web.task /data/local/tmp/
+   // gemmaEngine.initialize("/data/local/tmp/gemma-4-E2B-it-web.task")
    ```
 3. Replace them with:
    ```kotlin
    // Initialize AI in background
    Executors.newSingleThreadExecutor().execute {
        kotlinx.coroutines.runBlocking {
-           gemmaEngine.initialize("/data/local/tmp/gemma_model.bin")
+           gemmaEngine.initialize("/data/local/tmp/gemma-4-E2B-it-web.task")
        }
    }
    ```
