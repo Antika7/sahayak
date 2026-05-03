@@ -50,46 +50,30 @@ Running a 2B-parameter model on an emulator requires significantly more RAM than
 
 ## Step 3 — Download the Gemma Model
 
-You need a MediaPipe-compatible Gemma `.bin` model file.
+## Step 3 — Download the Gemma Model
 
-1. Go to the [Gemma models page on Kaggle](https://www.kaggle.com/models/google/gemma/frameworks/mediapipe).
-   - You will need a free Kaggle account and must accept the Gemma usage terms.
-2. Download the **Gemma 2B Instruction-Tuned CPU INT4** variant:
-   - Filename: `gemma-2b-it-cpu-int4.bin`
-   - Size: ~1.5 GB
-   - > ⚠️ Do **not** download the GPU variant for the emulator — emulators run on CPU only.
+You need a MediaPipe-compatible Gemma `.task` model file.
+
+1. Go to the [Gemma 4 LiteRT page on Hugging Face](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/main/gemma-4-E2B-it-web.task).
+2. Download the **Gemma 4 E2B Task Bundle**:
+   - Filename: `gemma-4-E2B-it-web.task`
+   - Size: ~2.0 GB
+   - > ⚠️ Do **not** download `.tar.gz` (Transformers) or raw `.litertlm` files. You need the `.task` bundle.
 
 ---
 
 ## Step 4 — Push the Model to the Emulator
 
-The model file is too large to bundle in the APK. Use ADB to copy it directly to the emulator's storage.
+The model file is too large to bundle in the APK. Use Android Studio's **Device Explorer** to copy it directly to the emulator's storage.
 
 1. Ensure the emulator is **running** (from Step 2).
-2. Open a terminal:
-   - **Windows:** Search for **Command Prompt** or **PowerShell**.
-   - **Mac/Linux:** Open **Terminal**.
-3. Verify ADB can see your emulator:
-   ```bash
-   adb devices
-   ```
-   You should see something like `emulator-5554  device`.
-
-4. Push the model file to the emulator:
-   ```bash
-   # Windows — replace the path with your actual download location
-   adb push C:\Users\YourName\Downloads\gemma-2b-it-cpu-int4.bin /data/local/tmp/gemma_model.bin
-
-   # Mac / Linux
-   adb push ~/Downloads/gemma-2b-it-cpu-int4.bin /data/local/tmp/gemma_model.bin
-   ```
-   > ⏳ This will take **2–5 minutes** depending on your USB/system speed. The file is ~1.5 GB.
-
-5. Verify the file was pushed successfully:
-   ```bash
-   adb shell ls -lh /data/local/tmp/gemma_model.bin
-   ```
-   You should see the file with its size (~1.4G).
+2. In Android Studio, go to **View > Tool Windows > Device Explorer** (or click it on the right sidebar).
+3. Follow this strict folder path: expand **`data`** ➡️ **`local`** ➡️ **`tmp`**.
+   - > 🛑 **DANGER:** Do *not* upload to the root `/tmp` folder at the top of the list! The root `/tmp` is a tiny RAM disk and will instantly give you a "No space left on device" error.
+4. Right-click the `tmp` folder (inside `/data/local/`) and select **Upload**.
+5. Select your downloaded `gemma-4-E2B-it-web.task` file. (This takes a few minutes).
+6. Once uploaded, right-click the file in the Device Explorer, select **Rename**, and change it exactly to:
+   `gemma_model.bin`
 
 ---
 

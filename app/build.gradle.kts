@@ -40,7 +40,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
     packaging {
         resources {
@@ -51,7 +51,7 @@ android {
 
 dependencies {
     // MediaPipe LLM Inference API
-    implementation("com.google.mediapipe:tasks-genai:0.10.14")
+    implementation("com.google.mediapipe:tasks-genai:0.10.20")
 
     // CameraX core library using the camera2 implementation
     val cameraxVersion = "1.3.3"
@@ -75,4 +75,7 @@ dependencies {
 
     // Core Android KTX
     implementation("androidx.core:core-ktx:1.13.1")
+    
+    // Material Components (required for XML themes)
+    implementation("com.google.android.material:material:1.12.0")
 }
