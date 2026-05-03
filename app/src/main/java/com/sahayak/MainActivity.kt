@@ -45,9 +45,12 @@ class MainActivity : ComponentActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
         gemmaEngine = LocalGemmaEngine(this)
         
-        // Initialize AI in background (Ensure model file is pushed to device storage)
-        // For hackathon: adb push model.bin /data/local/tmp/
-        // gemmaEngine.initialize("/data/local/tmp/gemma_model.bin")
+        // Initialize AI in background
+        Executors.newSingleThreadExecutor().execute {
+            kotlinx.coroutines.runBlocking {
+                gemmaEngine.initialize("/data/local/tmp/gemma_model.bin")
+            }
+        }
 
         setContent {
             SahayakTheme {

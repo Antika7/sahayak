@@ -7,6 +7,7 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.google.mediapipe.framework.image.BitmapImageBuilder
 
 class LocalGemmaEngine(private val context: Context) {
 
@@ -54,9 +55,7 @@ class LocalGemmaEngine(private val context: Context) {
         if (llmInference == null) return@withContext "Error: AI not initialized."
 
         try {
-            // TODO: If using pure text Gemma, extract text from Bitmap via OCR here first.
-            // val extractedText = myOcrEngine.extract(imageBitmap)
-            val extractedText = "[Simulated OCR Text from Form]" 
+            val mpImage = BitmapImageBuilder(imageBitmap).build()
 
             val prompt = """
                 You are a patient, helpful assistant for senior citizens.
@@ -69,7 +68,7 @@ class LocalGemmaEngine(private val context: Context) {
                 Keep the language simple, respectful, and easy to read.
             """.trimIndent()
 
-            return@withContext llmInference!!.generateResponse(prompt)
+            return@withContext llmInference!!.generateResponse(prompt, mpImage)
             
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OOM Error during form analysis!", e)
@@ -87,12 +86,11 @@ class LocalGemmaEngine(private val context: Context) {
         if (llmInference == null) return@withContext "Error: AI not initialized."
 
         try {
-            // TODO: Extract text from screen capture Bitmap via OCR.
-            val extractedText = "[Simulated OCR Text from Screen]"
+            val mpImage = BitmapImageBuilder(imageBitmap).build()
 
             val prompt = """
                 You are a cybersecurity expert protecting a senior citizen.
-                Analyze the following text visible on their screen.
+                Analyze the following image visible on their screen.
                 Context: \${userContext}
                 Screen Text: \${extractedText}
                 
@@ -101,7 +99,7 @@ class LocalGemmaEngine(private val context: Context) {
                 If it looks safe, briefly summarize what is on the screen.
             """.trimIndent()
 
-            return@withContext llmInference!!.generateResponse(prompt)
+            return@withContext llmInference!!.generateResponse(prompt, mpImage)
 
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OOM Error during screen analysis!", e)

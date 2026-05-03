@@ -40,7 +40,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
     packaging {
         resources {
@@ -75,4 +75,7 @@ dependencies {
 
     // Core Android KTX
     implementation("androidx.core:core-ktx:1.13.1")
+    
+    // Material Components (required for XML themes)
+    implementation("com.google.android.material:material:1.12.0")
 }
