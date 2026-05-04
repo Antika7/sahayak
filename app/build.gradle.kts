@@ -51,7 +51,8 @@ android {
 
 dependencies {
     // MediaPipe LLM Inference API
-    implementation("com.google.mediapipe:tasks-genai:0.10.20")
+    implementation("com.google.mediapipe:tasks-genai:0.10.35")
+    implementation("com.google.mediapipe:tasks-vision:0.10.35")
 
     // CameraX core library using the camera2 implementation
     val cameraxVersion = "1.3.3"
