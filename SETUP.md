@@ -51,6 +51,7 @@ Running a 2B-parameter model on an emulator requires significantly more RAM than
 ## Step 3 — Download the Gemma Model
 
 You need a MediaPipe-compatible Gemma `.task` model file.
+You need a MediaPipe-compatible Gemma `.task` bundle.
 
 1. Go to the [Gemma 4 LiteRT page on Hugging Face](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/main/gemma-4-E2B-it-web.task).
 2. Download the **Gemma 4 E2B Task Bundle**:
