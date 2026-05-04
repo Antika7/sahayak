@@ -50,8 +50,6 @@ Running a 2B-parameter model on an emulator requires significantly more RAM than
 
 ## Step 3 — Download the Gemma Model
 
-## Step 3 — Download the Gemma Model
-
 You need a MediaPipe-compatible Gemma `.task` model file.
 You need a MediaPipe-compatible Gemma `.task` bundle.
 
@@ -60,76 +58,38 @@ You need a MediaPipe-compatible Gemma `.task` bundle.
    - Filename: `gemma-4-E2B-it-web.task`
    - Size: ~2.0 GB
    - > ⚠️ Do **not** download `.tar.gz` (Transformers) or raw `.litertlm` files. You need the `.task` bundle.
-1. Go to the [Gemma models page on Kaggle](https://www.kaggle.com/models/google/gemma/frameworks/mediapipe).
-   - You will need a free Kaggle account and must accept the Gemma usage terms.
-2. Download the **Gemma 4 2B Instruction-Tuned Web** variant:
-   - Filename: `gemma-4-E2B-it-web.task`
-   - > ⚠️ Do **not** download the GPU variant for the emulator — emulators run on CPU only.
+3. Once downloaded, **rename the file** to exactly:
+   `gemma_model.task`
 
 ---
 
-## Step 4 — Push the Model to the Emulator
+## Step 4 — Push the Model to the Device
 
-The model file is too large to bundle in the APK. Use Android Studio's **Device Explorer** to copy it directly to the emulator's storage.
+The model file is too large to bundle in the APK. Push it directly to `/data/local/tmp/` using `adb`.
 
-1. Ensure the emulator is **running** (from Step 2).
-2. In Android Studio, go to **View > Tool Windows > Device Explorer** (or click it on the right sidebar).
-3. Follow this strict folder path: expand **`data`** ➡️ **`local`** ➡️ **`tmp`**.
-   - > 🛑 **DANGER:** Do *not* upload to the root `/tmp` folder at the top of the list! The root `/tmp` is a tiny RAM disk and will instantly give you a "No space left on device" error.
-4. Right-click the `tmp` folder (inside `/data/local/`) and select **Upload**.
-5. Select your downloaded `gemma-4-E2B-it-web.task` file. (This takes a few minutes).
-6. Once uploaded, right-click the file in the Device Explorer, select **Rename**, and change it exactly to:
-   `gemma_model.bin`
-2. Open a terminal:
-   - **Windows:** Search for **Command Prompt** or **PowerShell**.
-   - **Mac/Linux:** Open **Terminal**.
-3. Verify ADB can see your emulator:
-   ```bash
-   adb devices
-   ```
-   You should see something like `emulator-5554  device`.
+### Option A — ADB command (recommended)
 
-4. Push the model file to the emulator:
-   ```bash
-   # Windows — replace the path with your actual download location
-   adb push C:\Users\YourName\Downloads\gemma-4-E2B-it-web.task /data/local/tmp/gemma-4-E2B-it-web.task
+```bash
+adb push gemma_model.task /data/local/tmp/gemma_model.task
+```
 
-   # Mac / Linux
-   adb push ~/Downloads/gemma-4-E2B-it-web.task /data/local/tmp/gemma-4-E2B-it-web.task
-   ```
+This takes a few minutes depending on USB speed. Verify it landed correctly:
 
-5. Verify the file was pushed successfully:
-   ```bash
-   adb shell ls -lh /data/local/tmp/gemma-4-E2B-it-web.task
-   ```
-   You should see the file listed in `/data/local/tmp/`.
+```bash
+adb shell ls -lh /data/local/tmp/gemma_model.task
+```
+
+### Option B — Android Studio Device Explorer
+
+1. Ensure the emulator/device is **running**.
+2. In Android Studio, go to **View > Tool Windows > Device Explorer**.
+3. Navigate to **`data`** ➡️ **`local`** ➡️ **`tmp`**.
+   - > 🛑 **DANGER:** Do *not* upload to the root `/tmp` folder at the top of the list — it is a tiny RAM disk and will give "No space left on device" immediately.
+4. Right-click the `tmp` folder and select **Upload**, then select `gemma_model.task`.
 
 ---
 
-## Step 5 — Enable the Model in the Code
-
-The model initialization is commented out by default. Uncomment it in `MainActivity.kt`:
-
-1. Open `app/src/main/java/com/sahayak/MainActivity.kt`.
-2. Find these lines (around line 48):
-   ```kotlin
-   // Initialize AI in background (Ensure model file is pushed to device storage)
-   // For hackathon: adb push gemma-4-E2B-it-web.task /data/local/tmp/
-   // gemmaEngine.initialize("/data/local/tmp/gemma-4-E2B-it-web.task")
-   ```
-3. Replace them with:
-   ```kotlin
-   // Initialize AI in background
-   Executors.newSingleThreadExecutor().execute {
-       kotlinx.coroutines.runBlocking {
-           gemmaEngine.initialize("/data/local/tmp/gemma-4-E2B-it-web.task")
-       }
-   }
-   ```
-
----
-
-## Step 6 — Build and Run
+## Step 5 — Build and Run
 
 1. In Android Studio, select your running emulator from the device dropdown in the top toolbar.
 2. Click **Run 'app'** (the green ▶ button) or press `Shift + F10`.
@@ -140,7 +100,7 @@ The model initialization is commented out by default. Uncomment it in `MainActiv
 
 ---
 
-## Step 7 — Test the Features
+## Step 6 — Test the Features
 
 ### Physical Form Helper
 1. Tap the large **"Help with Physical Form"** button.
