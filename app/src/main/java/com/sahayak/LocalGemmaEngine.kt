@@ -3,12 +3,13 @@ package com.sahayak
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.tasks.genai.llminference.GraphOptions
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import com.google.mediapipe.framework.image.BitmapImageBuilder
-import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 
 class LocalGemmaEngine(private val context: Context) {
 
@@ -29,8 +30,8 @@ class LocalGemmaEngine(private val context: Context) {
 
             val options = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelPath)
-                // Adjust max tokens based on expected form/screen complexity and RAM limits
-                .setMaxTokens(512) 
+                .setMaxTokens(512)
+                .setMaxNumImages(1)
                 .build()
 
             llmInference = LlmInference.createFromOptions(context, options)
@@ -67,17 +68,19 @@ class LocalGemmaEngine(private val context: Context) {
                 and explicitly highlight any sections that ask for sensitive information (like SSN or bank details).
                 Keep the language simple, respectful, and easy to read.
             """.trimIndent()
-            val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder().build()
+            val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                .setGraphOptions(GraphOptions.builder().setEnableVisionModality(true).build())
+                .build()
             val session = LlmInferenceSession.createFromOptions(llmInference!!, sessionOptions)
-            
+
             session.addImage(mpImage)
             session.addQueryChunk(prompt)
-            
+
             val response = session.generateResponse()
             session.close()
-            
+
             return@withContext response
-            
+
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OOM Error during form analysis!", e)
             return@withContext "I'm sorry, the document is too large for my memory. Please try capturing a smaller section."
@@ -100,12 +103,14 @@ class LocalGemmaEngine(private val context: Context) {
                 You are a cybersecurity expert protecting a senior citizen.
                 Analyze the following image visible on their screen.
                 Context: ${userContext}
-                
+
                 Strictly check for signs of phishing, scams, urgent fake warnings, or malicious requests.
                 If it looks like a scam, output a clear, urgent WARNING in simple terms.
                 If it looks safe, briefly summarize what is on the screen.
             """.trimIndent()
-            val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder().build()
+            val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                .setGraphOptions(GraphOptions.builder().setEnableVisionModality(true).build())
+                .build()
             val session = LlmInferenceSession.createFromOptions(llmInference!!, sessionOptions)
             
             session.addImage(mpImage)
