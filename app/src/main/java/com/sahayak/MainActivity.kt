@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
         // Initialize AI in background
         Executors.newSingleThreadExecutor().execute {
             kotlinx.coroutines.runBlocking {
-                gemmaEngine.initialize("/data/local/tmp/gemma_model.bin")
+                gemmaEngine.initialize("/data/local/tmp/gemma_model.task")
             }
         }
 
