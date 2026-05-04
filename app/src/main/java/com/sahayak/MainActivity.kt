@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.sahayak.ui.theme.SahayakTheme
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
@@ -228,10 +229,4 @@ fun HubScreen(
             }
         }
     }
-}
-
-// Dummy Theme for compilation
-@Composable
-fun SahayakTheme(content: @Composable () -> Unit) {
-    MaterialTheme(content = content)
 }
