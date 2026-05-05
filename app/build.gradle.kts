@@ -1,16 +1,17 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.sahayak"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.sahayak"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
@@ -30,17 +31,16 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "1.8"
+    kotlin {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        }
     }
     buildFeatures {
         compose = true
-    }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
     }
     packaging {
         resources {
@@ -50,8 +50,15 @@ android {
 }
 
 dependencies {
-    // MediaPipe LLM Inference API
-    implementation("com.google.mediapipe:tasks-genai:0.10.20")
+    // LiteRT LLM (Gemma 4 on-device inference)
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.11.0")
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition-common:19.1.0")
+
+    // ML Kit OCR — reads text from the captured form image
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    // Markdown rendering
+    implementation("io.noties.markwon:core:4.6.2")
 
     // CameraX core library using the camera2 implementation
     val cameraxVersion = "1.3.3"
