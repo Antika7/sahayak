@@ -46,10 +46,22 @@ class MainActivity : ComponentActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
         gemmaEngine = LocalGemmaEngine(this)
         
-        // Initialize AI in background
+        // Initialize AI in background.
+        // Model already pushed to device via: adb push gemma-4-E2B-it-web.task /data/local/tmp/
+        val modelPath = "/data/local/tmp/gemma-4-E2B-it-web.task"
+        val modelFile = java.io.File(modelPath)
+        if (!modelFile.exists()) {
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    "Model file not found at $modelPath. Re-push via ADB.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
         Executors.newSingleThreadExecutor().execute {
             kotlinx.coroutines.runBlocking {
-                gemmaEngine.initialize("/data/local/tmp/gemma_model.litertlm")
+                gemmaEngine.initialize(modelPath)
             }
         }
 

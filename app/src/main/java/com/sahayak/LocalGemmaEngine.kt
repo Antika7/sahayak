@@ -73,8 +73,9 @@ class LocalGemmaEngine(private val context: Context) {
                 .build()
             val session = LlmInferenceSession.createFromOptions(llmInference!!, sessionOptions)
 
-            session.addImage(mpImage)
+            // Text chunk must be added before the image per MediaPipe API contract
             session.addQueryChunk(prompt)
+            session.addImage(mpImage)
 
             val response = session.generateResponse()
             session.close()
@@ -113,8 +114,9 @@ class LocalGemmaEngine(private val context: Context) {
                 .build()
             val session = LlmInferenceSession.createFromOptions(llmInference!!, sessionOptions)
             
-            session.addImage(mpImage)
+            // Text chunk must be added before the image per MediaPipe API contract
             session.addQueryChunk(prompt)
+            session.addImage(mpImage)
             
             val response = session.generateResponse()
             session.close()
