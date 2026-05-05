@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.INTERNET" /> <!-- Often needed by ML Kit/MediaPipe setup even if offline inference -->
 
     <!-- Optional: hardware requirements -->
@@ -33,8 +34,12 @@
             android:name=".FloatingWindowService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
-            <!-- Note: foregroundServiceType might need to be adjusted based on exact Android 14+ requirements -->
+            android:foregroundServiceType="specialUse">
+            <!-- Required by Android 14+ when using foregroundServiceType="specialUse" -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="overlay_accessibility_service" />
+        </service>
 
     </application>
 

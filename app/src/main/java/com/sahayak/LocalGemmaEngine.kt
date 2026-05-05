@@ -24,7 +24,7 @@ class LocalGemmaEngine(private val context: Context) {
         try {
             val file = File(modelPath)
             if (!file.exists()) {
-                Log.e(TAG, "Model file not found at \${modelPath}")
+                Log.e(TAG, "Model file not found at $modelPath")
                 return@withContext false
             }
 
