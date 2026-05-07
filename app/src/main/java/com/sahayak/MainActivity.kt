@@ -33,12 +33,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var cameraExecutor: ExecutorService
     private val shutterSound = MediaActionSound()
     var imageCapture: ImageCapture? = null
     private lateinit var gemmaEngine: LocalGemmaEngine
@@ -47,21 +44,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        cameraExecutor = Executors.newSingleThreadExecutor()
-        gemmaEngine = LocalGemmaEngine(this)
+        gemmaEngine = (application as SahayakApp).gemmaEngine
         userPreferences = UserPreferences(this)
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            gemmaEngine.initialize()
-        }
 
         setContent {
             SahayakTheme {
                 val navController = rememberNavController()
                 var startDestination by remember { mutableStateOf<String?>(null) }
-
-                // Holds the latest AI result so ResultScreen can read it without URL encoding limits
-                var latestFormResult by remember { mutableStateOf("") }
 
                 LaunchedEffect(Unit) {
                     val savedName = userPreferences.userName.first()
@@ -100,28 +89,9 @@ class MainActivity : ComponentActivity() {
                                 LaunchedEffect(Unit) { requestCameraPermission() }
                                 FormHelperScreen(
                                     onBack = { navController.popBackStack() },
-                                    onResult = { result ->
-                                        latestFormResult = result
-                                        navController.navigate(Screen.Result.route) {
-                                            popUpTo(Screen.FormHelper.route) { inclusive = true }
-                                        }
-                                    },
+                                    onResult = { /* unused: ConversationActivity launched directly from takePhoto */ },
                                     takePhoto = { onCapture, onResult -> takePhoto(onCapture, onResult) },
                                     setImageCapture = { imageCapture = it }
-                                )
-                            }
-
-                            composable(Screen.Result.route) {
-                                ResultScreen(
-                                    resultText = latestFormResult,
-                                    onScanAnother = {
-                                        navController.navigate(Screen.FormHelper.route) {
-                                            popUpTo(Screen.Home.route)
-                                        }
-                                    },
-                                    onGoHome = {
-                                        navController.popBackStack(Screen.Home.route, false)
-                                    }
                                 )
                             }
 
@@ -161,6 +131,8 @@ class MainActivity : ComponentActivity() {
         startService(Intent(this, FloatingWindowService::class.java))
     }
 
+    // onCapture fires immediately with the bitmap (so FormHelperScreen can show frozen frame)
+    // onResult fires when OCR is done (clears the analyzing state)
     private fun takePhoto(onCapture: (Bitmap) -> Unit, onResult: (String) -> Unit) {
         val capture = imageCapture ?: run {
             onResult("Camera not ready. Please wait and try again.")
@@ -181,12 +153,12 @@ class MainActivity : ComponentActivity() {
                     onCapture(bitmap)
 
                     lifecycleScope.launch(Dispatchers.IO) {
-                        val response = gemmaEngine.analyzeForm(
-                            bitmap,
-                            "User took a picture of a physical form and needs help understanding it."
-                        )
+                        val ocrText = gemmaEngine.extractFormText(bitmap)
                         withContext(Dispatchers.Main) {
-                            onResult(response)
+                            onResult("")
+                            val intent = Intent(this@MainActivity, ConversationActivity::class.java)
+                            intent.putExtra(ConversationActivity.EXTRA_FORM_CONTEXT, ocrText)
+                            startActivity(intent)
                         }
                     }
                 }
@@ -200,8 +172,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        cameraExecutor.shutdown()
         shutterSound.release()
-        gemmaEngine.close()
     }
 }
