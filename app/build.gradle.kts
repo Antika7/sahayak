@@ -50,6 +50,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.navigation:navigation-compose:2.9.8")
     // LiteRT LLM (Gemma 4 on-device inference)
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.11.0")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-common:19.1.0")
@@ -75,6 +76,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.0")
     
     // Navigation

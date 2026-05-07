@@ -72,6 +72,20 @@ class LocalGemmaEngine(private val context: Context) {
             }
     }
 
+    suspend fun extractFormText(bitmap: Bitmap): String = runOcr(bitmap)
+
+    suspend fun chat(message: String): String = withContext(Dispatchers.IO) {
+        val conv = conversation ?: return@withContext "I'm not ready yet. Please wait a moment."
+        try {
+            conv.sendMessage(message).contents.contents
+                .filterIsInstance<Content.Text>()
+                .joinToString("") { it.text }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in chat.", e)
+            "I'm sorry, I had trouble responding. Please try again."
+        }
+    }
+
     suspend fun analyzeForm(imageBitmap: Bitmap, userContext: String): String = withContext(Dispatchers.IO) {
         val conv = conversation ?: return@withContext "Error: AI not initialized."
         try {

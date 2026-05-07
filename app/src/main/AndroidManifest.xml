@@ -4,6 +4,7 @@
 
     <!-- Permissions required for the application -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -13,6 +14,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="true" />
 
     <application
+        android:name=".SahayakApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="Sahayak"
@@ -29,6 +31,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ConversationActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Sahayak" />
 
         <service
             android:name=".FloatingWindowService"
