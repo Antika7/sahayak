@@ -24,18 +24,27 @@ class LocalGemmaEngine(private val context: Context) {
 
     private val DEFAULT_MODEL_PATH = "/data/local/tmp/gemma-4-E2B-it.litertlm"
 
+    private fun tryCreateEngine(modelPath: String, backend: Backend): Engine? {
+        return try {
+            val config = EngineConfig(
+                modelPath = modelPath,
+                backend = backend,
+                cacheDir = context.cacheDir.absolutePath
+            )
+            Engine(config).also { it.initialize() }
+        } catch (e: Exception) {
+            Log.w(TAG, "Backend ${backend::class.simpleName} unavailable, trying fallback.", e)
+            null
+        }
+    }
+
     suspend fun initialize(modelPath: String = DEFAULT_MODEL_PATH): Boolean = withContext(Dispatchers.IO) {
         if (conversation != null) return@withContext true
         try {
             if (engine == null) {
-                val config = EngineConfig(
-                    modelPath = modelPath,
-                    backend = Backend.CPU(),
-                    cacheDir = context.cacheDir.absolutePath
-                )
-                val newEngine = Engine(config)
-                newEngine.initialize()
-                engine = newEngine
+                engine = tryCreateEngine(modelPath, Backend.GPU())
+                    ?: tryCreateEngine(modelPath, Backend.CPU())
+                    ?: return@withContext false
             }
             conversation = engine!!.createConversation()
             Log.d(TAG, "Gemma Engine initialized successfully.")
