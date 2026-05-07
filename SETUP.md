@@ -1,118 +1,128 @@
-# Sahayak — Local Emulator Setup Guide
+# Sahayak — Setup Guide
 
-This guide walks you through running **Sahayak** on an Android Emulator on your local machine using on-device Gemma via MediaPipe.
+This guide walks you through running **Sahayak** on an Android device or emulator. The app uses on-device Gemma 4 via LiteRT LLM for AI inference, ML Kit for OCR, and Android's built-in Speech-to-Text and Text-to-Speech APIs.
 
 ---
 
 ## Prerequisites
 
-Before you begin, ensure the following are installed:
-
-| Tool | Version | Download |
+| Tool | Version | Notes |
 |---|---|---|
-| Android Studio | Jellyfish (2023.3.1) or newer | [Download](https://developer.android.com/studio) |
-| JDK | 17 or newer | Bundled with Android Studio |
-| ADB | Any (bundled with Android Studio) | Bundled with Android Studio |
-| Git | Any | [Download](https://git-scm.com/) |
+| Android Studio | Hedgehog (2023.1.1) or newer | [Download](https://developer.android.com/studio) |
+| JDK | 17 | Bundled with Android Studio |
+| ADB | Any | Bundled with Android Studio |
+| Android device or emulator | API 26+ (Android 8.0+) | Physical device strongly recommended — model is 2.5 GB |
 
 ---
 
-## Step 1 — Open the Project in Android Studio
+## Step 1 — Open the Project
 
 1. Open **Android Studio**.
-2. Click **File > Open** and navigate to the `sahayak-backend` folder.
-3. If Android Studio does not recognize it as an Android project automatically:
-   - Create a new project: **File > New > New Project > Empty Activity (Compose)**.
-   - Choose `com.sahayak` as the package name.
-   - Copy the contents of `app/src` and `app/build.gradle.kts` from this repository into the new project.
-4. Click the **Sync Project with Gradle Files** button (the elephant 🐘 icon in the top toolbar). Wait for the sync to complete.
+2. Click **File > Open** and select the `sahayak-backend` folder.
+3. Click **Sync Project with Gradle Files** (the elephant icon in the toolbar) and wait for it to complete.
 
 ---
 
-## Step 2 — Create a High-RAM Android Virtual Device (AVD)
+## Step 2 — Download the Gemma 4 Model
 
-Running a 2B-parameter model on an emulator requires significantly more RAM than the default settings. Follow these steps carefully:
+The app uses **Gemma 4 E2B** in LiteRT LLM format (`.litertlm`).
 
-1. In Android Studio, go to **Tools > Device Manager**.
-2. Click **Create Virtual Device** (the `+` button).
-3. Select **Phone > Pixel 6** (or any device with a large screen). Click **Next**.
-4. Under **System Image**, select **API Level 33 or 34 (Android 13/14)** with the **x86_64** architecture. Download it if necessary. Click **Next**.
-5. On the final screen, click **Show Advanced Settings**.
-6. Set the following:
-   - **RAM:** `4096 MB` (4 GB) minimum. Set to `6144 MB` (6 GB) if your computer has 16GB+ RAM.
-   - **VM Heap:** `1024 MB`
-   - **Internal Storage:** `8192 MB` (8 GB) — needed for the model file.
-   - **Camera (Front & Back):** Set to `VirtualScene` or `Webcam0` to enable camera capture.
-7. Click **Finish** to create the AVD.
-8. Launch the emulator by clicking the **Play ▶** button next to the AVD.
+1. Go to the [litert-community Gemma 4 page on Hugging Face](https://huggingface.co/litert-community/Gemma-4-E2B-IT-int4)
+2. Download `gemma-4-E2B-it.litertlm` (~2.5 GB)
+3. You will need a Hugging Face account and must accept the Gemma model license
 
 ---
 
-## Step 3 — Download the Gemma Model
+## Step 3 — Push the Model to the Device
 
-You need a MediaPipe-compatible Gemma `.task` model file.
-You need a MediaPipe-compatible Gemma `.task` bundle.
+The model is too large to bundle in the APK. Push it directly using `adb`.
 
-1. Go to the [Gemma 4 LiteRT page on Hugging Face](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/main/gemma-4-E2B-it-web.task).
-2. Download the **Gemma 4 E2B Task Bundle**:
-   - Filename: `gemma-4-E2B-it-web.task`
-   - Size: ~2.0 GB
-   - > ⚠️ Do **not** download `.tar.gz` (Transformers) or raw `.litertlm` files. You need the `.task` bundle.
-3. Once downloaded, **rename the file** to exactly:
-   `gemma_model.task`
-
----
-
-## Step 4 — Push the Model to the Device
-
-The model file is too large to bundle in the APK. Push it directly to `/data/local/tmp/` using `adb`.
-
-### Option A — ADB command (recommended)
+Connect your device via USB with **USB Debugging** enabled, then run:
 
 ```bash
-adb push gemma_model.task /data/local/tmp/gemma_model.task
+adb push gemma-4-E2B-it.litertlm /data/local/tmp/gemma-4-E2B-it.litertlm
 ```
 
-This takes a few minutes depending on USB speed. Verify it landed correctly:
+> This takes several minutes over USB. Verify it landed:
+> ```bash
+> adb shell ls -lh /data/local/tmp/gemma-4-E2B-it.litertlm
+> ```
 
+**Full ADB path on Mac (if `adb` is not in PATH):**
 ```bash
-adb shell ls -lh /data/local/tmp/gemma_model.task
+/Users/<your-username>/Library/Android/sdk/platform-tools/adb push ...
 ```
-
-### Option B — Android Studio Device Explorer
-
-1. Ensure the emulator/device is **running**.
-2. In Android Studio, go to **View > Tool Windows > Device Explorer**.
-3. Navigate to **`data`** ➡️ **`local`** ➡️ **`tmp`**.
-   - > 🛑 **DANGER:** Do *not* upload to the root `/tmp` folder at the top of the list — it is a tiny RAM disk and will give "No space left on device" immediately.
-4. Right-click the `tmp` folder and select **Upload**, then select `gemma_model.task`.
 
 ---
 
-## Step 5 — Build and Run
+## Step 4 — Build and Run
 
-1. In Android Studio, select your running emulator from the device dropdown in the top toolbar.
+1. Select your connected device from the device dropdown in Android Studio.
 2. Click **Run 'app'** (the green ▶ button) or press `Shift + F10`.
-3. The app will build and install on the emulator.
-4. On first launch:
-   - Grant the **Camera** permission.
-   - The AI engine will load the model in the background (this takes ~10–30 seconds on first run).
+3. On first launch:
+   - Grant **Camera** permission when prompted.
+   - Grant **Microphone** permission when prompted (required for voice conversation).
+   - The AI engine loads the model in the background — this takes **30–60 seconds** on first run. Wait before tapping buttons.
 
 ---
 
-## Step 6 — Test the Features
+## Step 5 — Using the App
 
-### Physical Form Helper
-1. Tap the large **"Help with Physical Form"** button.
-2. The camera viewfinder will open (showing the VirtualScene in the emulator).
-3. Tap the button again to capture and analyze.
+### Help with Physical Form
 
-### Screen Sentinel (Floating Button)
+1. Point the camera at any physical form or document.
+2. Tap **"Help with Physical Form"**.
+3. You will hear a shutter click — the photo is taken immediately. You can lower your phone.
+4. The app runs OCR on the image to extract text, then opens the **Form Conversation screen**.
+5. Gemma greets you and summarizes the form aloud via Text-to-Speech.
+6. **Just speak** — the app is always listening. Ask questions like:
+   - *"What is this form for?"*
+   - *"What goes in the date of birth field?"*
+   - *"Is there anything sensitive I should be careful about?"*
+7. Gemma responds aloud and the conversation is shown as chat bubbles.
+8. Tap **✕** to exit the conversation.
+
+### Screen Sentinel (Scam Blocker)
+
 1. Tap **"Start Screen Sentinel"**.
-2. You will be redirected to the system **"Display over other apps"** settings screen.
-3. Enable the permission for **Sahayak**.
-4. Press the back button — the floating **"🛡️ Check Screen"** button should appear.
-5. Navigate to any other app and tap the floating button to trigger a screen analysis.
+2. You will be redirected to the system **"Display over other apps"** settings — enable it for Sahayak.
+3. Press back — the floating **"🛡️ Check Screen"** button appears on screen.
+4. Navigate to any app and tap the floating button to analyze the screen for scams.
+
+---
+
+## Emulator Setup (if not using a physical device)
+
+Running the 2.5 GB model on an emulator requires extra configuration:
+
+1. Go to **Tools > Device Manager > Create Virtual Device**.
+2. Select **Pixel 6** (or similar). Choose **API 35, x86_64**.
+3. Click **Show Advanced Settings** and set:
+   - **RAM:** 6144 MB (6 GB minimum)
+   - **VM Heap:** 1024 MB
+   - **Internal Storage:** 8192 MB
+   - **Back Camera:** `VirtualScene` or `Webcam0`
+4. Launch the AVD, then push the model file as in Step 3.
+
+> Note: Speech-to-Text requires a Google account signed in on the emulator and may not work reliably. A physical device is strongly recommended for the voice conversation feature.
+
+---
+
+## Build Configuration
+
+| Setting | Value |
+|---|---|
+| `compileSdk` / `targetSdk` | 35 |
+| `minSdk` | 26 |
+| Kotlin | 2.3.21 |
+| AGP | 8.7.3 |
+| Gradle wrapper | 8.9 |
+| JVM target | 17 |
+
+Key dependencies:
+- `com.google.ai.edge.litertlm:litertlm-android:0.11.0` — on-device LLM inference
+- `com.google.mlkit:text-recognition:16.0.1` — OCR for form text extraction
+- `io.noties.markwon:core:4.6.2` — Markdown rendering in chat dialog
 
 ---
 
@@ -120,9 +130,12 @@ adb shell ls -lh /data/local/tmp/gemma_model.task
 
 | Problem | Cause | Solution |
 |---|---|---|
-| App crashes on launch | Emulator RAM too low | Increase AVD RAM to 6GB in Device Manager |
-| `adb devices` shows nothing | ADB not in PATH | Use the full path: `C:\Users\...\AppData\Local\Android\Sdk\platform-tools\adb.exe` |
-| Model push fails with "no space left" | Emulator storage too small | Increase Internal Storage to 8192 MB in AVD settings |
-| AI gives no response after 30s | Model path wrong or OOM | Check `adb logcat` for `LocalGemmaEngine` tag errors |
-| Camera shows black screen | Camera not configured | Set AVD camera to `VirtualScene` in Advanced Settings |
-| Overlay button doesn't appear | Permission not granted | Go to **Settings > Apps > Sahayak > Display over other apps** and enable it manually |
+| App crashes on launch | Device RAM too low | Needs 4 GB+ free RAM; close background apps |
+| "Model file not found" in logcat | Model not pushed | Re-run the `adb push` command in Step 3 |
+| Model push fails — "no space left" | Device/emulator storage full | Free space or increase AVD internal storage to 8 GB |
+| AI gives no response | Model still loading | Wait 30–60 seconds after launch before using |
+| Voice conversation doesn't start | Microphone permission denied | Go to **Settings > Apps > Sahayak > Permissions > Microphone** |
+| TTS doesn't speak | No TTS engine installed | Go to **Settings > Accessibility > Text-to-speech** and install Google TTS |
+| Camera shows black screen | Permission not granted or AVD camera not configured | Check camera permission; set AVD camera to `VirtualScene` |
+| Overlay button doesn't appear | Overlay permission not granted | Go to **Settings > Apps > Sahayak > Display over other apps** |
+| `adb: command not found` | ADB not in PATH | Use full path: `~/Library/Android/sdk/platform-tools/adb` (Mac) |
