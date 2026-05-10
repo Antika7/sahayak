@@ -84,7 +84,8 @@ class MainActivity : ComponentActivity() {
                                 HomeHubScreen(
                                     userPreferences = userPreferences,
                                     onFormHelper = { navController.navigate(Screen.FormHelper.route) },
-                                    onSentinel = { navController.navigate(Screen.Sentinel.route) }
+                                    onSentinel = { navController.navigate(Screen.Sentinel.route) },
+                                    isSentinelActive = FloatingWindowService.isRunning.value
                                 )
                             }
 
@@ -102,6 +103,8 @@ class MainActivity : ComponentActivity() {
                                 SentinelStatusScreen(
                                     onBack = { navController.popBackStack() },
                                     onStartSentinel = { checkOverlayPermissionAndStart() },
+                                    isSentinelActive = FloatingWindowService.isRunning.value,
+                                    onStopSentinel = { stopSentinel() },
                                     isAccessibilityEnabled = isScamAccessibilityEnabled(),
                                     onOpenAccessibilitySettings = {
                                         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -136,6 +139,10 @@ class MainActivity : ComponentActivity() {
             return
         }
         startService(Intent(this, FloatingWindowService::class.java))
+    }
+
+    private fun stopSentinel() {
+        stopService(Intent(this, FloatingWindowService::class.java))
     }
 
     private fun isScamAccessibilityEnabled(): Boolean {
