@@ -1,5 +1,7 @@
 package com.sahayak
 
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaActionSound
 import android.Manifest
@@ -9,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -98,7 +101,11 @@ class MainActivity : ComponentActivity() {
                             composable(Screen.Sentinel.route) {
                                 SentinelStatusScreen(
                                     onBack = { navController.popBackStack() },
-                                    onStartSentinel = { checkOverlayPermissionAndStart() }
+                                    onStartSentinel = { checkOverlayPermissionAndStart() },
+                                    isAccessibilityEnabled = isScamAccessibilityEnabled(),
+                                    onOpenAccessibilitySettings = {
+                                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                    }
                                 )
                             }
                         }
@@ -129,6 +136,12 @@ class MainActivity : ComponentActivity() {
             return
         }
         startService(Intent(this, FloatingWindowService::class.java))
+    }
+
+    private fun isScamAccessibilityEnabled(): Boolean {
+        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabled = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+        return enabled.any { it.id.contains("ScamDetectorAccessibilityService", ignoreCase = true) }
     }
 
     // onCapture fires immediately with the bitmap (so FormHelperScreen can show frozen frame)

@@ -36,14 +36,13 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.sahayak.ui.theme.SahayakTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
-import java.util.Calendar
-import java.text.SimpleDateFormat
 
 data class ChatMessage(val text: String, val isUser: Boolean)
 
@@ -60,10 +59,15 @@ class ConversationActivity : ComponentActivity() {
     private var ttsReady = false
     private var isSpeaking = false
     private var formContext = ""
+    private var screenContext = ""
+    private var clientErrorRetries = 0
     private val collectedFields = mutableMapOf<String, String>()
 
     companion object {
         const val EXTRA_FORM_CONTEXT = "form_context"
+        const val EXTRA_SCREEN_CONTEXT = "screen_context"
+        private val FIELD_REGEX = Regex("FIELD:([^=]+)=(.+)", RegexOption.MULTILINE)
+        private val MARKDOWN_REGEX = Regex("[*_#`]")
     }
 
     private val micPermissionLauncher = registerForActivityResult(
@@ -76,6 +80,7 @@ class ConversationActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         formContext = intent.getStringExtra(EXTRA_FORM_CONTEXT) ?: ""
+        screenContext = intent.getStringExtra(EXTRA_SCREEN_CONTEXT) ?: ""
 
         gemmaEngine = (application as? SahayakApp)?.gemmaEngine
             ?: LocalGemmaEngine(this).also {
@@ -97,7 +102,11 @@ class ConversationActivity : ComponentActivity() {
                     override fun onError(utteranceId: String?) { isSpeaking = false }
                 })
                 ttsReady = true
-                sendInitialGreeting(formContext)
+                if (screenContext.isNotBlank()) {
+                    sendScreenGreeting(screenContext)
+                } else {
+                    sendInitialGreeting(formContext)
+                }
             }
         }
 
@@ -108,22 +117,36 @@ class ConversationActivity : ComponentActivity() {
                     isListening = listeningState.value,
                     isThinking = thinkingState.value,
                     onDone = { finish() },
-                    onSendText = { handleUserSpeech(it) }
+                    onSendText = { handleUserSpeech(it) },
+                    title = if (screenContext.isNotBlank()) "Screen Helper" else "Form Helper"
                 )
             }
         }
     }
 
     private fun sendInitialGreeting(formContext: String) {
+        sendGreeting(
+            "You are a warm, patient voice assistant helping a senior citizen fill out a form. " +
+            "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
+            "The form contains this text: $formContext\n\n" +
+            "Greet the user warmly and in one sentence tell them what the form is about. " +
+            "Then ask them what they'd like help with first."
+        )
+    }
+
+    private fun sendScreenGreeting(screenContext: String) {
+        sendGreeting(
+            "You are a patient, friendly assistant helping a senior citizen understand their phone screen. " +
+            "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
+            "Here is what is currently on their screen:\n$screenContext\n\n" +
+            "Greet them warmly, briefly explain what they're looking at, and ask if they have any questions about it."
+        )
+    }
+
+    private fun sendGreeting(prompt: String) {
         thinkingState.value = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val greeting = gemmaEngine.chat(
-                "You are a warm, patient voice assistant helping a senior citizen fill out a form. " +
-                "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
-                "The form contains this text: $formContext\n\n" +
-                "Greet the user warmly and in one sentence tell them what the form is about. " +
-                "Then ask them what they'd like help with first."
-            )
+        lifecycleScope.launch(Dispatchers.IO) {
+            val greeting = gemmaEngine.chat(prompt)
             withContext(Dispatchers.Main) {
                 thinkingState.value = false
                 addMessage(greeting, false)
@@ -135,12 +158,18 @@ class ConversationActivity : ComponentActivity() {
     fun handleUserSpeech(userText: String) {
         addMessage(userText, true)
         thinkingState.value = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val collectedSummary = if (collectedFields.isEmpty()) ""
+        lifecycleScope.launch(Dispatchers.IO) {
+            val prompt = if (screenContext.isNotBlank()) {
+                "You are a patient, friendly assistant helping a senior citizen understand their phone screen. " +
+                "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
+                "Answer their questions clearly and simply. If something is dangerous, warn them plainly. " +
+                "Here is what is on their screen:\n$screenContext\n\n" +
+                "The user asked: $userText"
+            } else {
+                val collectedSummary = if (collectedFields.isEmpty()) ""
                 else "So far the user has provided: " +
                     collectedFields.entries.joinToString(", ") { "${it.key} = ${it.value}" } + ". "
 
-            val prompt =
                 "You are a warm, patient voice assistant helping a senior citizen fill out a form. " +
                 "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
                 "Guide them through each field one at a time. " +
@@ -153,15 +182,14 @@ class ConversationActivity : ComponentActivity() {
                 collectedSummary +
                 "The form contains this text: $formContext\n\n" +
                 "The user said: $userText"
+            }
 
             val response = gemmaEngine.chat(prompt)
 
-            // Parse any FIELD: annotations out of the response and store them
-            val fieldRegex = Regex("FIELD:([^=]+)=(.+)", RegexOption.MULTILINE)
-            fieldRegex.findAll(response).forEach { match ->
+            FIELD_REGEX.findAll(response).forEach { match ->
                 collectedFields[match.groupValues[1].trim()] = match.groupValues[2].trim()
             }
-            val cleanResponse = response.replace(fieldRegex, "").trim()
+            val cleanResponse = response.replace(FIELD_REGEX, "").trim()
 
             withContext(Dispatchers.Main) {
                 thinkingState.value = false
@@ -173,7 +201,7 @@ class ConversationActivity : ComponentActivity() {
 
     private fun speak(text: String) {
         // Strip markdown symbols so TTS doesn't read "asterisk asterisk"
-        val clean = text.replace(Regex("[*_#`]"), "")
+        val clean = text.replace(MARKDOWN_REGEX, "")
         tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "ai_response")
     }
 
@@ -218,13 +246,19 @@ class ConversationActivity : ComponentActivity() {
                         }
                     }
                     SpeechRecognizer.ERROR_CLIENT -> {
-                        Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 500)
+                        if (clientErrorRetries < 3) {
+                            clientErrorRetries++
+                            Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 500L * clientErrorRetries)
+                        } else {
+                            Log.e(TAG, "SpeechRecognizer ERROR_CLIENT: max retries reached")
+                        }
                     }
                     else -> Log.e(TAG, "SpeechRecognizer unhandled error: $error")
                 }
             }
             override fun onResults(results: Bundle?) {
                 listeningState.value = false
+                clientErrorRetries = 0
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 Log.d(TAG, "onResults: $matches")
                 val text = matches?.firstOrNull()
@@ -261,7 +295,8 @@ fun ConversationScreen(
     isListening: Boolean,
     isThinking: Boolean,
     onDone: () -> Unit,
-    onSendText: (String) -> Unit
+    onSendText: (String) -> Unit,
+    title: String = "Form Helper"
 ) {
     val listState = rememberLazyListState()
     var inputText by remember { mutableStateOf("") }
@@ -280,7 +315,6 @@ fun ConversationScreen(
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
 
-        // Top bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -289,7 +323,7 @@ fun ConversationScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Form Helper",
+                title,
                 color = Color.White,
                 fontSize = 20.sp,
                 modifier = Modifier.weight(1f)
@@ -299,7 +333,6 @@ fun ConversationScreen(
             }
         }
 
-        // Chat messages
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).padding(16.dp),
@@ -310,7 +343,6 @@ fun ConversationScreen(
             }
         }
 
-        // Status bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -346,7 +378,6 @@ fun ConversationScreen(
             }
         }
 
-        // Text input fallback (useful when mic unavailable, e.g. emulator)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
