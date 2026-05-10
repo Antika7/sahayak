@@ -63,7 +63,6 @@ class LocalGemmaEngine(private val context: Context) {
         val image = InputImage.fromBitmap(bitmap, 0)
         recognizer.process(image)
             .addOnSuccessListener { result ->
-                Log.d(TAG, "OCR extracted ${result.text.length} chars: ${result.text.take(200)}")
                 cont.resume(result.text)
             }
             .addOnFailureListener { e ->
@@ -138,6 +137,101 @@ class LocalGemmaEngine(private val context: Context) {
             Log.e(TAG, "Error analyzing screen.", e)
             "An error occurred while analyzing the screen."
         }
+    }
+
+    suspend fun analyzeScreenContext(context: ScreenContext): ScreenAnalysisResult = withContext(Dispatchers.IO) {
+        val conv = conversation ?: return@withContext ScreenAnalysisResult(
+            explanation = "AI not initialized. Please wait and try again.",
+            riskLevel = RiskLevel.LOW,
+            riskReason = null,
+            suggestedAction = "Wait a moment and tap the button again."
+        )
+        try {
+            val redactedText = PrivacyFilter.redact(context.visibleText.take(2000))
+                .ifBlank { "(no text visible on screen)" }
+            val appInfo = context.appPackage?.let { "APP: $it" } ?: "APP: Unknown"
+            val elementsInfo = if (context.interactiveElements.isNotEmpty()) {
+                "INTERACTIVE ELEMENTS: ${context.interactiveElements.joinToString(", ")}"
+            } else ""
+
+            val prompt = """
+                You are a helpful assistant explaining a phone screen to a senior citizen.
+                The user tapped a help button to understand what they're seeing.
+
+                $appInfo
+                SCREEN TEXT:
+                $redactedText
+
+                $elementsInfo
+
+                Instructions:
+                1. In 1-2 simple sentences, explain what this screen is showing.
+                2. Assess risk: is there anything suspicious, misleading, or potentially dangerous?
+                3. If there IS a risk, explain the danger in plain language.
+                4. Suggest what the user should do next.
+
+                Reply in EXACTLY this format (each on its own line):
+                EXPLANATION: <1-2 sentences explaining the screen>
+                RISK: NONE or LOW or HIGH
+                RISK_REASON: <why it's risky, or "none">
+                ACTION: <what the user should do next>
+            """.trimIndent()
+
+            val response = conv.sendMessage(prompt).contents.contents
+                .filterIsInstance<Content.Text>()
+                .joinToString("") { it.text }
+            parseScreenAnalysis(response)
+        } catch (e: OutOfMemoryError) {
+            Log.e(TAG, "OOM during screen context analysis.", e)
+            ScreenAnalysisResult(
+                explanation = "Not enough memory to analyze. Please close some apps and try again.",
+                riskLevel = RiskLevel.LOW,
+                riskReason = null,
+                suggestedAction = "Close some apps, then try again."
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error analyzing screen context.", e)
+            ScreenAnalysisResult(
+                explanation = "Could not finish the analysis. Please try again.",
+                riskLevel = RiskLevel.LOW,
+                riskReason = null,
+                suggestedAction = "Try tapping the button again."
+            )
+        }
+    }
+
+    private fun parseScreenAnalysis(response: String): ScreenAnalysisResult {
+        val lines = response.trim().lines()
+        val map = mutableMapOf<String, String>()
+        for (line in lines) {
+            val colonIndex = line.indexOf(':')
+            if (colonIndex > 0) {
+                val key = line.substring(0, colonIndex).trim().uppercase()
+                val value = line.substring(colonIndex + 1).trim()
+                if (key in setOf("EXPLANATION", "RISK", "RISK_REASON", "ACTION")) {
+                    map[key] = value
+                }
+            }
+        }
+
+        val explanation = map["EXPLANATION"] ?: response.trim().lines().firstOrNull() ?: response.trim()
+        val riskLevel = when {
+            map["RISK"]?.contains("HIGH", ignoreCase = true) == true -> RiskLevel.HIGH
+            map["RISK"]?.contains("LOW", ignoreCase = true) == true -> RiskLevel.LOW
+            map["RISK"]?.contains("NONE", ignoreCase = true) == true -> RiskLevel.NONE
+            else -> RiskLevel.LOW
+        }
+        val riskReason = map["RISK_REASON"]?.takeIf {
+            it.isNotBlank() && !it.equals("none", ignoreCase = true)
+        }
+        val suggestedAction = map["ACTION"]?.takeIf { it.isNotBlank() }
+
+        return ScreenAnalysisResult(
+            explanation = explanation,
+            riskLevel = riskLevel,
+            riskReason = riskReason,
+            suggestedAction = suggestedAction
+        )
     }
 
     fun close() {
