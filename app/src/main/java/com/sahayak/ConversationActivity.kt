@@ -43,8 +43,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
-import java.util.Calendar
-import java.text.SimpleDateFormat
 
 data class ChatMessage(val text: String, val isUser: Boolean)
 
@@ -62,11 +60,14 @@ class ConversationActivity : ComponentActivity() {
     private var isSpeaking = false
     private var formContext = ""
     private var screenContext = ""
+    private var clientErrorRetries = 0
     private val collectedFields = mutableMapOf<String, String>()
 
     companion object {
         const val EXTRA_FORM_CONTEXT = "form_context"
         const val EXTRA_SCREEN_CONTEXT = "screen_context"
+        private val FIELD_REGEX = Regex("FIELD:([^=]+)=(.+)", RegexOption.MULTILINE)
+        private val MARKDOWN_REGEX = Regex("[*_#`]")
     }
 
     private val micPermissionLauncher = registerForActivityResult(
@@ -185,11 +186,10 @@ class ConversationActivity : ComponentActivity() {
 
             val response = gemmaEngine.chat(prompt)
 
-            val fieldRegex = Regex("FIELD:([^=]+)=(.+)", RegexOption.MULTILINE)
-            fieldRegex.findAll(response).forEach { match ->
+            FIELD_REGEX.findAll(response).forEach { match ->
                 collectedFields[match.groupValues[1].trim()] = match.groupValues[2].trim()
             }
-            val cleanResponse = response.replace(fieldRegex, "").trim()
+            val cleanResponse = response.replace(FIELD_REGEX, "").trim()
 
             withContext(Dispatchers.Main) {
                 thinkingState.value = false
@@ -201,7 +201,7 @@ class ConversationActivity : ComponentActivity() {
 
     private fun speak(text: String) {
         // Strip markdown symbols so TTS doesn't read "asterisk asterisk"
-        val clean = text.replace(Regex("[*_#`]"), "")
+        val clean = text.replace(MARKDOWN_REGEX, "")
         tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "ai_response")
     }
 
@@ -246,13 +246,19 @@ class ConversationActivity : ComponentActivity() {
                         }
                     }
                     SpeechRecognizer.ERROR_CLIENT -> {
-                        Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 500)
+                        if (clientErrorRetries < 3) {
+                            clientErrorRetries++
+                            Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 500L * clientErrorRetries)
+                        } else {
+                            Log.e(TAG, "SpeechRecognizer ERROR_CLIENT: max retries reached")
+                        }
                     }
                     else -> Log.e(TAG, "SpeechRecognizer unhandled error: $error")
                 }
             }
             override fun onResults(results: Bundle?) {
                 listeningState.value = false
+                clientErrorRetries = 0
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 Log.d(TAG, "onResults: $matches")
                 val text = matches?.firstOrNull()
@@ -309,7 +315,6 @@ fun ConversationScreen(
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
 
-        // Top bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -328,7 +333,6 @@ fun ConversationScreen(
             }
         }
 
-        // Chat messages
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).padding(16.dp),
@@ -339,7 +343,6 @@ fun ConversationScreen(
             }
         }
 
-        // Status bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -375,7 +378,6 @@ fun ConversationScreen(
             }
         }
 
-        // Text input fallback (useful when mic unavailable, e.g. emulator)
         Row(
             modifier = Modifier
                 .fillMaxWidth()

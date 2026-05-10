@@ -41,13 +41,18 @@ class ScamDetectorAccessibilityService : AccessibilityService() {
 
     fun getScreenContext(): ScreenContext {
         val root = rootInActiveWindow ?: return ScreenContext("", null, false, false, emptyList())
+        val appPackage = root.packageName?.toString()
         val collector = NodeCollector()
-        collectNodes(root, collector)
+        try {
+            collectNodes(root, collector)
+        } finally {
+            root.recycle()
+        }
 
         val fullText = collector.text.toString().trim()
         return ScreenContext(
             visibleText = fullText,
-            appPackage = root.packageName?.toString(),
+            appPackage = appPackage,
             hasPasswordField = collector.hasPassword,
             hasPaymentContext = PrivacyFilter.containsPaymentPattern(fullText),
             interactiveElements = collector.interactiveLabels
@@ -66,10 +71,12 @@ class ScamDetectorAccessibilityService : AccessibilityService() {
         val className = node.className?.toString().orEmpty()
         val inputType = node.inputType
 
-        if (isPasswordField(className, inputType)) {
+        if (isPasswordField(inputType)) {
             collector.hasPassword = true
             for (i in 0 until node.childCount) {
-                collectNodes(node.getChild(i), collector)
+                val child = node.getChild(i) ?: continue
+                collectNodes(child, collector)
+                child.recycle()
             }
             return
         }
@@ -89,11 +96,13 @@ class ScamDetectorAccessibilityService : AccessibilityService() {
         }
 
         for (i in 0 until node.childCount) {
-            collectNodes(node.getChild(i), collector)
+            val child = node.getChild(i) ?: continue
+            collectNodes(child, collector)
+            child.recycle()
         }
     }
 
-    private fun isPasswordField(className: String, inputType: Int): Boolean {
+    private fun isPasswordField(inputType: Int): Boolean {
         if (inputType == 0) return false
         val masked = inputType and InputType.TYPE_MASK_VARIATION
         return masked == InputType.TYPE_TEXT_VARIATION_PASSWORD ||

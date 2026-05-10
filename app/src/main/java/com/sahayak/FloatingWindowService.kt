@@ -37,7 +37,11 @@ class FloatingWindowService : Service() {
     private lateinit var floatingButton: ImageView
     private lateinit var floatingParams: WindowManager.LayoutParams
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private val TAG = "FloatingWindowService"
+
+    private companion object {
+        const val TAG = "FloatingWindowService"
+        const val CHANNEL_ID = "sahayak_sentinel_channel"
+    }
 
     private var tts: TextToSpeech? = null
     private var ttsReady = false
@@ -71,12 +75,11 @@ class FloatingWindowService : Service() {
     }
 
     private fun startForegroundService() {
-        val channelId = "sahayak_sentinel_channel"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "Sahayak Screen Helper", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CHANNEL_ID, "Sahayak Screen Helper", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
-        val notification: Notification = NotificationCompat.Builder(this, channelId)
+        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Sahayak is active")
             .setContentText("Tap the floating help button anytime to understand your screen.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -186,47 +189,51 @@ class FloatingWindowService : Service() {
         floatingButton.alpha = if (analyzing) 0.4f else 1.0f
     }
 
-    private data class ResultUI(val bgColor: Int, val icon: String)
+    private data class ResultUI(val bgColor: Int)
 
     private fun resultUi(risk: RiskLevel) = when (risk) {
-        RiskLevel.NONE -> ResultUI(Color.parseColor("#1565C0"), "i")
-        RiskLevel.LOW -> ResultUI(Color.parseColor("#E65100"), "!")
-        RiskLevel.HIGH -> ResultUI(Color.parseColor("#B71C1C"), "!!!")
+        RiskLevel.NONE -> ResultUI(Color.parseColor("#1565C0"))
+        RiskLevel.LOW -> ResultUI(Color.parseColor("#E65100"))
+        RiskLevel.HIGH -> ResultUI(Color.parseColor("#B71C1C"))
     }
 
     private fun showResultOverlay(result: ScreenAnalysisResult) {
         dismissResultOverlay()
 
-        val (bgColor, icon) = resultUi(result.riskLevel)
+        val bgColor = resultUi(result.riskLevel).bgColor
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(bgColor)
-            setPadding(32, 28, 32, 20)
+            setPadding(32, 24, 32, 20)
         }
 
         val titleText = when (result.riskLevel) {
-            RiskLevel.NONE -> "[$icon]  Screen Explained"
-            RiskLevel.LOW -> "[$icon]  Caution"
-            RiskLevel.HIGH -> "[$icon]  WARNING"
+            RiskLevel.NONE -> "Safe"
+            RiskLevel.LOW -> "Caution"
+            RiskLevel.HIGH -> "WARNING"
         }
 
         val titleView = TextView(this).apply {
             text = titleText
-            textSize = 20f
+            textSize = 22f
             setTextColor(Color.WHITE)
             setTypeface(null, Typeface.BOLD)
+        }
+        card.addView(titleView)
+
+        val detailContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, 12, 0, 0)
         }
 
         val explanationView = TextView(this).apply {
             text = result.explanation
             textSize = 15f
             setTextColor(Color.WHITE)
-            setPadding(0, 12, 0, 0)
         }
-
-        card.addView(titleView)
-        card.addView(explanationView)
+        detailContainer.addView(explanationView)
 
         if (result.riskReason != null) {
             val riskView = TextView(this).apply {
@@ -236,23 +243,43 @@ class FloatingWindowService : Service() {
                 setPadding(0, 8, 0, 0)
                 setTypeface(null, Typeface.ITALIC)
             }
-            card.addView(riskView)
+            detailContainer.addView(riskView)
         }
 
         if (result.suggestedAction != null) {
             val actionView = TextView(this).apply {
-                text = "Next step: ${result.suggestedAction}"
+                text = "Next: ${result.suggestedAction}"
                 textSize = 14f
                 setTextColor(Color.parseColor("#E3F2FD"))
-                setPadding(0, 8, 0, 16)
+                setPadding(0, 8, 0, 0)
             }
-            card.addView(actionView)
+            detailContainer.addView(actionView)
         }
+
+        card.addView(detailContainer)
 
         val bottomRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, 12, 0, 0)
+        }
+
+        val whyBtn = TextView(this).apply {
+            text = "Why?"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setTypeface(null, Typeface.BOLD)
+            setPadding(24, 10, 24, 10)
+            setBackgroundColor(Color.parseColor("#00000033"))
+            setOnClickListener {
+                if (detailContainer.visibility == View.GONE) {
+                    detailContainer.visibility = View.VISIBLE
+                    this.text = "Less"
+                } else {
+                    detailContainer.visibility = View.GONE
+                    this.text = "Why?"
+                }
+            }
         }
 
         val speakerBtn = ImageButton(this).apply {
@@ -263,11 +290,11 @@ class FloatingWindowService : Service() {
         }
 
         val tellMoreBtn = TextView(this).apply {
-            text = "Tell me more"
+            text = "Ask more"
             textSize = 14f
             setTextColor(Color.WHITE)
             setTypeface(null, Typeface.BOLD)
-            setPadding(24, 12, 24, 12)
+            setPadding(24, 10, 24, 10)
             setBackgroundColor(Color.parseColor("#00000033"))
             setOnClickListener { launchConversation() }
         }
@@ -279,6 +306,7 @@ class FloatingWindowService : Service() {
             setOnClickListener { dismissResultOverlay() }
         }
 
+        bottomRow.addView(whyBtn)
         bottomRow.addView(speakerBtn)
         bottomRow.addView(tellMoreBtn)
         bottomRow.addView(closeBtn)

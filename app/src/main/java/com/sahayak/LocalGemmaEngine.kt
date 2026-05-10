@@ -18,11 +18,14 @@ import kotlin.coroutines.resume
 
 class LocalGemmaEngine(private val context: Context) {
 
+    private companion object {
+        const val TAG = "LocalGemmaEngine"
+        const val DEFAULT_MODEL_PATH = "/data/local/tmp/gemma-4-E2B-it.litertlm"
+    }
+
     private var engine: Engine? = null
     private var conversation: Conversation? = null
-    private val TAG = "LocalGemmaEngine"
-
-    private val DEFAULT_MODEL_PATH = "/data/local/tmp/gemma-4-E2B-it.litertlm"
+    private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
     private fun tryCreateEngine(modelPath: String, backend: Backend): Engine? {
         return try {
@@ -58,8 +61,12 @@ class LocalGemmaEngine(private val context: Context) {
         }
     }
 
+    private fun sendAndExtract(conv: Conversation, prompt: String): String =
+        conv.sendMessage(prompt).contents.contents
+            .filterIsInstance<Content.Text>()
+            .joinToString("") { it.text }
+
     private suspend fun runOcr(bitmap: Bitmap): String = suspendCancellableCoroutine { cont ->
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         val image = InputImage.fromBitmap(bitmap, 0)
         recognizer.process(image)
             .addOnSuccessListener { result ->
@@ -76,9 +83,7 @@ class LocalGemmaEngine(private val context: Context) {
     suspend fun chat(message: String): String = withContext(Dispatchers.IO) {
         val conv = conversation ?: return@withContext "I'm not ready yet. Please wait a moment."
         try {
-            conv.sendMessage(message).contents.contents
-                .filterIsInstance<Content.Text>()
-                .joinToString("") { it.text }
+            sendAndExtract(conv, message)
         } catch (e: Exception) {
             Log.e(TAG, "Error in chat.", e)
             "I'm sorry, I had trouble responding. Please try again."
@@ -103,9 +108,7 @@ class LocalGemmaEngine(private val context: Context) {
                 and explicitly highlight any sections that ask for sensitive information (like SSN or bank details).
                 Keep the language simple, respectful, and easy to read.
             """.trimIndent()
-            conv.sendMessage(prompt).contents.contents
-                .filterIsInstance<Content.Text>()
-                .joinToString("") { it.text }
+            sendAndExtract(conv, prompt)
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OOM during form analysis.", e)
             "I'm sorry, the document is too large for my memory. Please try capturing a smaller section."
@@ -115,7 +118,7 @@ class LocalGemmaEngine(private val context: Context) {
         }
     }
 
-    suspend fun analyzeScreen(imageBitmap: Bitmap, userContext: String): String = withContext(Dispatchers.IO) {
+    suspend fun analyzeScreen(userContext: String): String = withContext(Dispatchers.IO) {
         val conv = conversation ?: return@withContext "Error: AI not initialized."
         try {
             val prompt = """
@@ -127,9 +130,7 @@ class LocalGemmaEngine(private val context: Context) {
                 If it looks like a scam, output a clear, urgent WARNING in simple terms.
                 If it looks safe, briefly summarize what is on the screen.
             """.trimIndent()
-            conv.sendMessage(prompt).contents.contents
-                .filterIsInstance<Content.Text>()
-                .joinToString("") { it.text }
+            sendAndExtract(conv, prompt)
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OOM during screen analysis.", e)
             "I'm out of memory analyzing this screen. Please close some apps and try again."
@@ -177,9 +178,7 @@ class LocalGemmaEngine(private val context: Context) {
                 ACTION: <what the user should do next>
             """.trimIndent()
 
-            val response = conv.sendMessage(prompt).contents.contents
-                .filterIsInstance<Content.Text>()
-                .joinToString("") { it.text }
+            val response = sendAndExtract(conv, prompt)
             parseScreenAnalysis(response)
         } catch (e: OutOfMemoryError) {
             Log.e(TAG, "OOM during screen context analysis.", e)
@@ -239,5 +238,6 @@ class LocalGemmaEngine(private val context: Context) {
         conversation = null
         engine?.close()
         engine = null
+        recognizer.close()
     }
 }
