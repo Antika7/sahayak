@@ -90,14 +90,14 @@ fun HomeHubScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Sentinel card
+        // Screen Helper card
         FeatureCard(
-            emoji = "🛡",
-            title = "Is This a Scam?",
-            description = "Let me check this screen for suspicious content",
+            emoji = "?",
+            title = "Help Me Understand",
+            description = "Explains any screen and warns you about scams",
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            badgeText = if (isSentinelActive) "Protected" else null,
+            badgeText = if (isSentinelActive) "Active" else null,
             badgeColor = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier
                 .fillMaxWidth()
