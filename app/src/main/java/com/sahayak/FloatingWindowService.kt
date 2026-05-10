@@ -23,6 +23,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -38,9 +39,11 @@ class FloatingWindowService : Service() {
     private lateinit var floatingParams: WindowManager.LayoutParams
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    private companion object {
-        const val TAG = "FloatingWindowService"
-        const val CHANNEL_ID = "sahayak_sentinel_channel"
+    companion object {
+        private const val TAG = "FloatingWindowService"
+        private const val CHANNEL_ID = "sahayak_sentinel_channel"
+
+        val isRunning = mutableStateOf(false)
     }
 
     private var tts: TextToSpeech? = null
@@ -62,6 +65,7 @@ class FloatingWindowService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning.value = true
         initTts()
         startForegroundService()
         setupFloatingButton()
@@ -367,6 +371,7 @@ class FloatingWindowService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isRunning.value = false
         if (::floatingButton.isInitialized) {
             try { windowManager.removeView(floatingButton) } catch (_: Exception) {}
         }
