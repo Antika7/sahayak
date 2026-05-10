@@ -18,6 +18,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -33,7 +34,7 @@ import kotlin.math.abs
 class FloatingWindowService : Service() {
 
     private lateinit var windowManager: WindowManager
-    private lateinit var floatingButton: View
+    private lateinit var floatingButton: ImageView
     private lateinit var floatingParams: WindowManager.LayoutParams
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val TAG = "FloatingWindowService"
@@ -42,6 +43,7 @@ class FloatingWindowService : Service() {
     private var ttsReady = false
     private var resultOverlay: View? = null
     private var lastScreenContext: ScreenContext? = null
+    private var isAnalyzing = false
 
     private val gemmaEngine get() = (application as SahayakApp).gemmaEngine
 
@@ -85,20 +87,16 @@ class FloatingWindowService : Service() {
     private fun setupFloatingButton() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        val button = TextView(this).apply {
-            text = "?"
-            textSize = 28f
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#1565C0"))
-            setTextColor(Color.WHITE)
-            setTypeface(null, Typeface.BOLD)
-            setPadding(28, 20, 28, 20)
+        val buttonSizePx = (56 * resources.displayMetrics.density).toInt()
+        val button = ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher_round)
+            scaleType = ImageView.ScaleType.CENTER_CROP
         }
         floatingButton = button
 
         floatingParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            buttonSizePx,
+            buttonSizePx,
             overlayLayoutFlag,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
@@ -153,6 +151,8 @@ class FloatingWindowService : Service() {
     }
 
     private fun handleCheckClick() {
+        if (isAnalyzing) return
+
         val accessibility = ScamDetectorAccessibilityService.instance
         if (accessibility == null) {
             Toast.makeText(this, "Please enable Sahayak in Accessibility Settings first.", Toast.LENGTH_LONG).show()
@@ -161,17 +161,29 @@ class FloatingWindowService : Service() {
 
         val screenContext = accessibility.getScreenContext()
         lastScreenContext = screenContext
-        Toast.makeText(this, "Analyzing...", Toast.LENGTH_SHORT).show()
+        setAnalyzingState(true)
 
         serviceScope.launch {
-            val initialized = gemmaEngine.initialize()
-            if (!initialized) {
-                Toast.makeText(this@FloatingWindowService, "AI engine not ready. Please wait.", Toast.LENGTH_LONG).show()
-                return@launch
+            try {
+                val initialized = gemmaEngine.initialize()
+                if (!initialized) {
+                    setAnalyzingState(false)
+                    Toast.makeText(this@FloatingWindowService, "AI engine not ready. Please wait.", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                val result = gemmaEngine.analyzeScreenContext(screenContext)
+                showResultOverlay(result)
+            } catch (e: Exception) {
+                Log.e(TAG, "Analysis failed", e)
+            } finally {
+                setAnalyzingState(false)
             }
-            val result = gemmaEngine.analyzeScreenContext(screenContext)
-            showResultOverlay(result)
         }
+    }
+
+    private fun setAnalyzingState(analyzing: Boolean) {
+        isAnalyzing = analyzing
+        floatingButton.alpha = if (analyzing) 0.4f else 1.0f
     }
 
     private data class ResultUI(val bgColor: Int, val icon: String)
