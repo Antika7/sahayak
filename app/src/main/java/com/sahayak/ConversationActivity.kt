@@ -1,8 +1,11 @@
 package com.sahayak
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Geocoder
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -37,12 +40,50 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.sahayak.ui.theme.SahayakTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
+
+private fun resolveAddress(
+    context: Context,
+    lat: Double,
+    lon: Double,
+    onResult: (address: String, locality: String) -> Unit,
+    onError: (String) -> Unit
+) {
+    val geocoder = Geocoder(context, Locale.getDefault())
+    val format = { addresses: List<android.location.Address>? ->
+        if (addresses.isNullOrEmpty()) {
+            onError("Could not find address for your location.")
+        } else {
+            val addr = addresses[0]
+            val parts = listOfNotNull(
+                addr.subLocality,
+                addr.locality,
+                addr.subAdminArea,
+                addr.adminArea,
+                addr.countryName
+            ).distinct().filter { it.isNotBlank() }
+            onResult(parts.joinToString(", "), addr.locality ?: "")
+        }
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        geocoder.getFromLocation(lat, lon, 1) { format(it) }
+    } else {
+        try {
+            @Suppress("DEPRECATION")
+            format(geocoder.getFromLocation(lat, lon, 1))
+        } catch (e: Exception) {
+            onError("Geocoding failed: ${e.localizedMessage}")
+        }
+    }
+}
 
 data class ChatMessage(val text: String, val isUser: Boolean)
 
@@ -58,16 +99,41 @@ class ConversationActivity : ComponentActivity() {
     private var thinkingState = mutableStateOf(false)
     private var ttsReady = false
     private var isSpeaking = false
-    private var formContext = ""
+    private var formContext   = ""
     private var screenContext = ""
+    private var userName      = ""
+    private var userLanguage  = "English"
+    private var userDob       = ""
+    private var userCity      = ""
     private var clientErrorRetries = 0
     private val collectedFields = mutableMapOf<String, String>()
 
+    private enum class LocationState { IDLE, FETCHING, AWAITING_CONFIRMATION }
+    private var locationState = LocationState.IDLE
+    private var pendingLocationAddress = ""
+    private var pendingLocationLocality = ""
+
     companion object {
-        const val EXTRA_FORM_CONTEXT = "form_context"
+        const val EXTRA_FORM_CONTEXT   = "form_context"
         const val EXTRA_SCREEN_CONTEXT = "screen_context"
-        private val FIELD_REGEX = Regex("FIELD:([^=]+)=(.+)", RegexOption.MULTILINE)
+        const val EXTRA_USER_NAME      = "user_name"
+        const val EXTRA_USER_LANGUAGE  = "user_language"
+        const val EXTRA_USER_DOB       = "user_dob"
+        const val EXTRA_USER_CITY      = "user_city"
+        private val FIELD_REGEX    = Regex("FIELD:([^=]+)=(.+)", RegexOption.MULTILINE)
         private val MARKDOWN_REGEX = Regex("[*_#`]")
+        private const val LOCATION_TOKEN = "##REQUEST_LOCATION##"
+    }
+
+    private val originalTtsListener = object : UtteranceProgressListener() {
+        override fun onStart(utteranceId: String?) { isSpeaking = true }
+        override fun onDone(utteranceId: String?) {
+            isSpeaking = false
+            if (utteranceId == "ai_response") {
+                Handler(Looper.getMainLooper()).post { startListening() }
+            }
+        }
+        override fun onError(utteranceId: String?) { isSpeaking = false }
     }
 
     private val micPermissionLauncher = registerForActivityResult(
@@ -76,11 +142,37 @@ class ConversationActivity : ComponentActivity() {
         if (granted) startListening() else addMessage("Microphone permission is needed to hear you. Please grant it in Settings.", false)
     }
 
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
+            fetchLocationForForm()
+        } else {
+            locationState = LocationState.IDLE
+            thinkingState.value = false
+            val msg = if (userLanguage == "हिंदी")
+                "मुझे आपका पता जानने के लिए लोकेशन अनुमति चाहिए। कृपया सेटिंग में अनुमति दें, फिर जारी रखें।"
+            else
+                "I need location permission to find your address. Please grant it in Settings, then continue."
+            addMessage(msg, false)
+            speak(msg)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        formContext = intent.getStringExtra(EXTRA_FORM_CONTEXT) ?: ""
-        screenContext = intent.getStringExtra(EXTRA_SCREEN_CONTEXT) ?: ""
+        formContext    = intent.getStringExtra(EXTRA_FORM_CONTEXT)   ?: ""
+        screenContext  = intent.getStringExtra(EXTRA_SCREEN_CONTEXT)  ?: ""
+        userName       = intent.getStringExtra(EXTRA_USER_NAME)       ?: ""
+        userLanguage   = intent.getStringExtra(EXTRA_USER_LANGUAGE)   ?: "English"
+        userDob        = intent.getStringExtra(EXTRA_USER_DOB)        ?: ""
+        userCity       = intent.getStringExtra(EXTRA_USER_CITY)       ?: ""
+
+        if (userName.isNotBlank()) collectedFields["name"]          = userName
+        if (userDob.isNotBlank())  collectedFields["date of birth"] = userDob
+        if (userCity.isNotBlank()) collectedFields["city"]          = userCity
 
         gemmaEngine = (application as? SahayakApp)?.gemmaEngine
             ?: LocalGemmaEngine(this).also {
@@ -89,18 +181,9 @@ class ConversationActivity : ComponentActivity() {
 
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tts.language = Locale.US
+                tts.language = if (userLanguage == "हिंदी") Locale("hi", "IN") else Locale.US
                 tts.setSpeechRate(0.9f)
-                tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) { isSpeaking = true }
-                    override fun onDone(utteranceId: String?) {
-                        isSpeaking = false
-                        if (utteranceId == "ai_response") {
-                            Handler(Looper.getMainLooper()).post { startListening() }
-                        }
-                    }
-                    override fun onError(utteranceId: String?) { isSpeaking = false }
-                })
+                tts.setOnUtteranceProgressListener(originalTtsListener)
                 ttsReady = true
                 if (screenContext.isNotBlank()) {
                     sendScreenGreeting(screenContext)
@@ -125,12 +208,23 @@ class ConversationActivity : ComponentActivity() {
     }
 
     private fun sendInitialGreeting(formContext: String) {
+        val profile  = buildUserProfile()
+        val langInst = buildLanguageInstruction()
         sendGreeting(
-            "You are a warm, patient voice assistant helping a senior citizen fill out a form. " +
-            "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
-            "The form contains this text: $formContext\n\n" +
-            "Greet the user warmly and in one sentence tell them what the form is about. " +
-            "Then ask them what they'd like help with first."
+            "You are a patient, knowledgeable assistant helping a senior citizen fill out a physical paper form. " +
+            "Your role is to guide them through each field one at a time. " +
+            "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks." +
+            (if (profile.isNotBlank())  "\n\n$profile"  else "") +
+            (if (langInst.isNotBlank()) "\n\n$langInst" else "") +
+            "\n\nThe form contains this text: $formContext\n\n" +
+            "Greet the user briefly by name if you know it. In one sentence say what this form is for. " +
+            "Then move to the very first field: if you already know the answer from the user profile, " +
+            "tell them exactly what to write (e.g. 'For your name, write Riya Sharma'). " +
+            "If the field is something technical or confusing like a Tax ID, PAN number, or form code, " +
+            "briefly explain what it means in simple everyday language before asking. " +
+            "If you do not know the value, ask for just that one piece of information. " +
+            "If you need the user's address or location for a field and it is not in the profile, " +
+            "do NOT ask the user — instead emit exactly $LOCATION_TOKEN on its own line and stop."
         )
     }
 
@@ -156,6 +250,38 @@ class ConversationActivity : ComponentActivity() {
     }
 
     fun handleUserSpeech(userText: String) {
+        // Gate 1: intercept yes/no confirmation for detected location
+        if (locationState == LocationState.AWAITING_CONFIRMATION) {
+            addMessage(userText, true)
+            val t = userText.trim().lowercase()
+            val confirmed = t.startsWith("yes") || t.startsWith("हाँ") || t.startsWith("ha") ||
+                t == "ok" || t == "okay" || t == "sure" || t == "haan"
+            if (confirmed) {
+                locationState = LocationState.IDLE
+                collectedFields["address / location"] = pendingLocationAddress
+                if (userCity.isBlank() && pendingLocationLocality.isNotBlank()) {
+                    userCity = pendingLocationLocality
+                    collectedFields["city"] = pendingLocationLocality
+                }
+                val injected = "The user's address has been confirmed as: $pendingLocationAddress. " +
+                    "Continue filling the form from where you left off."
+                pendingLocationAddress = ""
+                pendingLocationLocality = ""
+                continueFormWithInjectedContext(injected)
+            } else {
+                locationState = LocationState.IDLE
+                pendingLocationAddress = ""
+                pendingLocationLocality = ""
+                val msg = if (userLanguage == "हिंदी")
+                    "ठीक है। कृपया मुझे अपना पता बताएं।"
+                else
+                    "No problem. Could you please tell me your address?"
+                addMessage(msg, false)
+                speak(msg)
+            }
+            return
+        }
+
         addMessage(userText, true)
         thinkingState.value = true
         lifecycleScope.launch(Dispatchers.IO) {
@@ -166,41 +292,284 @@ class ConversationActivity : ComponentActivity() {
                 "Here is what is on their screen:\n$screenContext\n\n" +
                 "The user asked: $userText"
             } else {
-                val collectedSummary = if (collectedFields.isEmpty()) ""
-                else "So far the user has provided: " +
-                    collectedFields.entries.joinToString(", ") { "${it.key} = ${it.value}" } + ". "
+                val filledSummary = if (collectedFields.isEmpty()) ""
+                    else "Fields already handled: " +
+                        collectedFields.entries.joinToString(", ") { "${it.key} = ${it.value}" } + ". "
 
-                "You are a warm, patient voice assistant helping a senior citizen fill out a form. " +
+                val profile  = buildUserProfile()
+                val langInst = buildLanguageInstruction()
+                val profileSection = if (profile.isNotBlank()) "\n\n$profile" else ""
+
+                "You are a patient, knowledgeable assistant helping a senior citizen fill out a physical paper form. " +
+                "Guide them through each field one at a time using these rules:\n" +
+                "1. If you already know the value from the user profile, tell them exactly what to write — do not ask (e.g. 'For Date of Birth, write 15 August 1952').\n" +
+                "2. If the field is something technical or unfamiliar — like Tax ID, PAN number, Aadhaar, TIN, form codes, or legal terms — first explain in one simple sentence what it means, then ask them for it.\n" +
+                "3. If it is a straightforward unknown field, just ask for it plainly.\n" +
+                "4. After the user provides a value, confirm it back and move to the next field.\n" +
+                "5. When every field on the form has been handled, say a brief warm closing (e.g. 'That's everything! You're all done.') and end your response with the exact token ##FORM_COMPLETE## on its own line. Only emit this token when the form is truly finished.\n" +
+                "6. If you need the user's address or location for a field and it is not already in the profile, do NOT ask the user. Instead, output exactly $LOCATION_TOKEN on its own line and stop. Do not output anything else after that token.\n" +
                 "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
-                "Guide them through each field one at a time. " +
-                "The current year is 2026. " +
-                "IMPORTANT: If the user provides a value that is inconsistent with something already collected " +
-                "(for example, an age that doesn't match a previously given date of birth), " +
-                "gently flag the inconsistency and ask them to confirm before moving on. " +
-                "After confirming a field value, reply with 'FIELD:<fieldname>=<value>' on a hidden line so it can be tracked — " +
-                "but do NOT say this out loud. " +
-                collectedSummary +
+                "The current year is 2026." +
+                profileSection +
+                (if (langInst.isNotBlank()) "\n\n$langInst" else "") +
+                "\n\n$filledSummary" +
                 "The form contains this text: $formContext\n\n" +
                 "The user said: $userText"
             }
 
             val response = gemmaEngine.chat(prompt)
 
+            // Gate 2: intercept ##REQUEST_LOCATION## before normal processing
+            if (response.contains(LOCATION_TOKEN)) {
+                val cleanForDisplay = response
+                    .replace(LOCATION_TOKEN, "")
+                    .replace(FIELD_REGEX, "")
+                    .trim()
+                withContext(Dispatchers.Main) {
+                    thinkingState.value = false
+                    if (cleanForDisplay.isNotEmpty()) {
+                        addMessage(cleanForDisplay, false)
+                        val cleanTts = cleanForDisplay.replace(MARKDOWN_REGEX, "")
+                        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                            override fun onStart(utteranceId: String?) {}
+                            override fun onDone(utteranceId: String?) {
+                                if (utteranceId == "pre_location_fetch") {
+                                    tts.setOnUtteranceProgressListener(originalTtsListener)
+                                    Handler(Looper.getMainLooper()).post { requestLocationForForm() }
+                                }
+                            }
+                            override fun onError(utteranceId: String?) {
+                                tts.setOnUtteranceProgressListener(originalTtsListener)
+                                Handler(Looper.getMainLooper()).post { requestLocationForForm() }
+                            }
+                        })
+                        tts.speak(cleanTts, TextToSpeech.QUEUE_FLUSH, null, "pre_location_fetch")
+                    } else {
+                        requestLocationForForm()
+                    }
+                }
+                return@launch
+            }
+
             FIELD_REGEX.findAll(response).forEach { match ->
                 collectedFields[match.groupValues[1].trim()] = match.groupValues[2].trim()
             }
-            val cleanResponse = response.replace(FIELD_REGEX, "").trim()
+
+            val isDone = response.contains("##FORM_COMPLETE##")
+            val cleanResponse = response
+                .replace(FIELD_REGEX, "")
+                .replace("##FORM_COMPLETE##", "")
+                .trim()
 
             withContext(Dispatchers.Main) {
                 thinkingState.value = false
                 addMessage(cleanResponse, false)
-                speak(cleanResponse)
+                if (isDone) {
+                    tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {}
+                        override fun onDone(utteranceId: String?) {
+                            if (utteranceId == "ai_response_final") {
+                                Handler(Looper.getMainLooper()).postDelayed({ finish() }, 500)
+                            }
+                        }
+                        override fun onError(utteranceId: String?) { finish() }
+                    })
+                    val clean = cleanResponse.replace(MARKDOWN_REGEX, "")
+                    tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "ai_response_final")
+                } else {
+                    speak(cleanResponse)
+                }
             }
         }
     }
 
+    private fun requestLocationForForm() {
+        val fine   = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (fine == PackageManager.PERMISSION_GRANTED || coarse == PackageManager.PERMISSION_GRANTED) {
+            fetchLocationForForm()
+        } else {
+            locationPermissionLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+        }
+    }
+
+    private fun fetchLocationForForm() {
+        locationState = LocationState.FETCHING
+        thinkingState.value = true
+        val fusedClient = LocationServices.getFusedLocationProviderClient(this)
+        val cts = CancellationTokenSource()
+        fusedClient.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, cts.token)
+            .addOnSuccessListener { loc ->
+                if (loc != null) {
+                    resolveAddress(this, loc.latitude, loc.longitude,
+                        onResult = { addr, locality ->
+                            Handler(Looper.getMainLooper()).post { geocodeAndConfirm(addr, locality) }
+                        },
+                        onError = { msg ->
+                            Handler(Looper.getMainLooper()).post { onLocationFetchFailed(msg) }
+                        }
+                    )
+                } else {
+                    fusedClient.lastLocation
+                        .addOnSuccessListener { last ->
+                            if (last != null) {
+                                resolveAddress(this, last.latitude, last.longitude,
+                                    onResult = { addr, locality ->
+                                        Handler(Looper.getMainLooper()).post { geocodeAndConfirm(addr, locality) }
+                                    },
+                                    onError = { msg ->
+                                        Handler(Looper.getMainLooper()).post { onLocationFetchFailed(msg) }
+                                    }
+                                )
+                            } else {
+                                Handler(Looper.getMainLooper()).post {
+                                    onLocationFetchFailed("Could not get your location. Please try again.")
+                                }
+                            }
+                        }
+                        .addOnFailureListener { e ->
+                            Handler(Looper.getMainLooper()).post {
+                                onLocationFetchFailed("Location unavailable: ${e.localizedMessage}")
+                            }
+                        }
+                }
+            }
+            .addOnFailureListener { e ->
+                Handler(Looper.getMainLooper()).post {
+                    onLocationFetchFailed("Location unavailable: ${e.localizedMessage}")
+                }
+            }
+    }
+
+    private fun geocodeAndConfirm(address: String, locality: String) {
+        pendingLocationAddress = address
+        pendingLocationLocality = locality
+        locationState = LocationState.AWAITING_CONFIRMATION
+        thinkingState.value = false
+        val msg = if (userLanguage == "हिंदी")
+            "मैंने आपका पता पाया: $address। क्या मैं इसे उपयोग करूँ? हाँ या नहीं कहें।"
+        else
+            "I found your location as $address. Shall I use this? Please say yes or no."
+        tts.setOnUtteranceProgressListener(originalTtsListener)
+        addMessage(msg, false)
+        speak(msg)
+    }
+
+    private fun onLocationFetchFailed(reason: String) {
+        locationState = LocationState.IDLE
+        thinkingState.value = false
+        val msg = if (userLanguage == "हिंदी")
+            "माफ़ करें, मैं आपका पता नहीं पा सका। क्या आप मुझे अपना पता बता सकते हैं?"
+        else
+            "Sorry, I couldn't detect your location. Could you please tell me your address?"
+        Log.e(TAG, "Location fetch failed: $reason")
+        addMessage(msg, false)
+        speak(msg)
+    }
+
+    private fun continueFormWithInjectedContext(injectedContext: String) {
+        thinkingState.value = true
+        lifecycleScope.launch(Dispatchers.IO) {
+            val filledSummary = if (collectedFields.isEmpty()) ""
+                else "Fields already handled: " +
+                    collectedFields.entries.joinToString(", ") { "${it.key} = ${it.value}" } + ". "
+            val profile  = buildUserProfile()
+            val langInst = buildLanguageInstruction()
+            val profileSection = if (profile.isNotBlank()) "\n\n$profile" else ""
+            val prompt =
+                "You are a patient, knowledgeable assistant helping a senior citizen fill out a physical paper form. " +
+                "Guide them through each field one at a time using these rules:\n" +
+                "1. If you already know the value from the user profile, tell them exactly what to write — do not ask.\n" +
+                "2. If the field is technical or unfamiliar, explain it simply then ask.\n" +
+                "3. If it is a straightforward unknown field, just ask for it plainly.\n" +
+                "4. After a value is provided, confirm it and move to the next field.\n" +
+                "5. When every field is handled, say a brief warm closing and end with ##FORM_COMPLETE## on its own line.\n" +
+                "6. If you need the user's address or location for a field and it is not in the profile, " +
+                "do NOT ask the user. Output exactly $LOCATION_TOKEN on its own line and stop.\n" +
+                "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
+                "The current year is 2026." +
+                profileSection +
+                (if (langInst.isNotBlank()) "\n\n$langInst" else "") +
+                "\n\n$filledSummary" +
+                "The form contains this text: $formContext\n\n" +
+                injectedContext
+
+            val response = gemmaEngine.chat(prompt)
+
+            if (response.contains(LOCATION_TOKEN)) {
+                val cleanForDisplay = response.replace(LOCATION_TOKEN, "").replace(FIELD_REGEX, "").trim()
+                withContext(Dispatchers.Main) {
+                    thinkingState.value = false
+                    if (cleanForDisplay.isNotEmpty()) {
+                        addMessage(cleanForDisplay, false)
+                        val cleanTts = cleanForDisplay.replace(MARKDOWN_REGEX, "")
+                        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                            override fun onStart(utteranceId: String?) {}
+                            override fun onDone(utteranceId: String?) {
+                                if (utteranceId == "pre_location_fetch") {
+                                    tts.setOnUtteranceProgressListener(originalTtsListener)
+                                    Handler(Looper.getMainLooper()).post { requestLocationForForm() }
+                                }
+                            }
+                            override fun onError(utteranceId: String?) {
+                                tts.setOnUtteranceProgressListener(originalTtsListener)
+                                Handler(Looper.getMainLooper()).post { requestLocationForForm() }
+                            }
+                        })
+                        tts.speak(cleanTts, TextToSpeech.QUEUE_FLUSH, null, "pre_location_fetch")
+                    } else {
+                        requestLocationForForm()
+                    }
+                }
+                return@launch
+            }
+
+            FIELD_REGEX.findAll(response).forEach { match ->
+                collectedFields[match.groupValues[1].trim()] = match.groupValues[2].trim()
+            }
+            val isDone = response.contains("##FORM_COMPLETE##")
+            val cleanResponse = response
+                .replace(FIELD_REGEX, "")
+                .replace("##FORM_COMPLETE##", "")
+                .trim()
+            withContext(Dispatchers.Main) {
+                thinkingState.value = false
+                addMessage(cleanResponse, false)
+                if (isDone) {
+                    tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {}
+                        override fun onDone(utteranceId: String?) {
+                            if (utteranceId == "ai_response_final") {
+                                Handler(Looper.getMainLooper()).postDelayed({ finish() }, 500)
+                            }
+                        }
+                        override fun onError(utteranceId: String?) { finish() }
+                    })
+                    tts.speak(cleanResponse.replace(MARKDOWN_REGEX, ""), TextToSpeech.QUEUE_FLUSH, null, "ai_response_final")
+                } else {
+                    speak(cleanResponse)
+                }
+            }
+        }
+    }
+
+    private fun buildUserProfile(): String {
+        val parts = mutableListOf<String>()
+        if (userName.isNotBlank())     parts.add("Name: $userName")
+        if (userDob.isNotBlank())      parts.add("Date of birth: $userDob")
+        if (userCity.isNotBlank())     parts.add("City: $userCity")
+        if (userLanguage.isNotBlank()) parts.add("Preferred language: $userLanguage")
+        return if (parts.isEmpty()) "" else "About the user — ${parts.joinToString(", ")}."
+    }
+
+    private fun buildLanguageInstruction(): String =
+        if (userLanguage == "हिंदी")
+            "IMPORTANT: The user speaks Hindi. Respond entirely in Hindi (Devanagari script)."
+        else ""
+
     private fun speak(text: String) {
-        // Strip markdown symbols so TTS doesn't read "asterisk asterisk"
         val clean = text.replace(MARKDOWN_REGEX, "")
         tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "ai_response")
     }
@@ -274,7 +643,7 @@ class ConversationActivity : ComponentActivity() {
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (userLanguage == "हिंदी") "hi-IN" else Locale.US.toString())
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
         }
