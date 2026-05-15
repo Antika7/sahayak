@@ -24,11 +24,14 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.compose.runtime.mutableStateOf
+import com.sahayak.data.UserPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
 
@@ -344,12 +347,29 @@ class FloatingWindowService : Service() {
                 appendLine("Buttons/links: ${context.interactiveElements.joinToString(", ")}")
             }
         }
-        val intent = Intent(this, ConversationActivity::class.java).apply {
-            putExtra(ConversationActivity.EXTRA_SCREEN_CONTEXT, screenSummary)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val prefs = UserPreferences(this)
+        serviceScope.launch(Dispatchers.IO) {
+            val userName       = prefs.userName.first()       ?: ""
+            val userLanguage   = prefs.userLanguage.first()
+            val userDob        = prefs.userDob.first()
+            val userCity       = prefs.userCity.first()
+            val userSpouseName = prefs.userSpouseName.first()
+            val userPan        = prefs.userPan.first()
+            withContext(Dispatchers.Main) {
+                val intent = Intent(this@FloatingWindowService, ConversationActivity::class.java).apply {
+                    putExtra(ConversationActivity.EXTRA_SCREEN_CONTEXT, screenSummary)
+                    putExtra(ConversationActivity.EXTRA_USER_NAME,      userName)
+                    putExtra(ConversationActivity.EXTRA_USER_LANGUAGE,  userLanguage)
+                    putExtra(ConversationActivity.EXTRA_USER_DOB,       userDob)
+                    putExtra(ConversationActivity.EXTRA_USER_CITY,      userCity)
+                    putExtra(ConversationActivity.EXTRA_USER_SPOUSE,    userSpouseName)
+                    putExtra(ConversationActivity.EXTRA_USER_PAN,       userPan)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+                dismissResultOverlay()
+            }
         }
-        startActivity(intent)
-        dismissResultOverlay()
     }
 
     private fun dismissResultOverlay() {
