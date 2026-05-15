@@ -105,6 +105,8 @@ class ConversationActivity : ComponentActivity() {
     private var userLanguage  = "English"
     private var userDob       = ""
     private var userCity      = ""
+    private var userSpouseName = ""
+    private var userPan       = ""
     private var clientErrorRetries = 0
     private val collectedFields = mutableMapOf<String, String>()
 
@@ -120,8 +122,12 @@ class ConversationActivity : ComponentActivity() {
         const val EXTRA_USER_LANGUAGE  = "user_language"
         const val EXTRA_USER_DOB       = "user_dob"
         const val EXTRA_USER_CITY      = "user_city"
+        const val EXTRA_USER_SPOUSE    = "user_spouse"
+        const val EXTRA_USER_PAN       = "user_pan"
         private val FIELD_REGEX    = Regex("FIELD:([^=]+)=(.+)", RegexOption.MULTILINE)
         private val MARKDOWN_REGEX = Regex("[*_#`]")
+        private val TOKEN_REGEX    = Regex("##[A-Z_]+##?")
+        private val FORM_COMPLETE_REGEX = Regex("##FORM_COMPLETE#?#?")
         private const val LOCATION_TOKEN = "##REQUEST_LOCATION##"
     }
 
@@ -163,16 +169,24 @@ class ConversationActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        formContext    = intent.getStringExtra(EXTRA_FORM_CONTEXT)   ?: ""
-        screenContext  = intent.getStringExtra(EXTRA_SCREEN_CONTEXT)  ?: ""
-        userName       = intent.getStringExtra(EXTRA_USER_NAME)       ?: ""
-        userLanguage   = intent.getStringExtra(EXTRA_USER_LANGUAGE)   ?: "English"
-        userDob        = intent.getStringExtra(EXTRA_USER_DOB)        ?: ""
-        userCity       = intent.getStringExtra(EXTRA_USER_CITY)       ?: ""
+        formContext     = intent.getStringExtra(EXTRA_FORM_CONTEXT)   ?: ""
+        screenContext   = intent.getStringExtra(EXTRA_SCREEN_CONTEXT)  ?: ""
+        userName        = intent.getStringExtra(EXTRA_USER_NAME)       ?: ""
+        userLanguage    = intent.getStringExtra(EXTRA_USER_LANGUAGE)   ?: "English"
+        userDob         = intent.getStringExtra(EXTRA_USER_DOB)        ?: ""
+        userCity        = intent.getStringExtra(EXTRA_USER_CITY)       ?: ""
+        userSpouseName  = intent.getStringExtra(EXTRA_USER_SPOUSE)     ?: ""
+        userPan         = intent.getStringExtra(EXTRA_USER_PAN)        ?: ""
 
-        if (userName.isNotBlank()) collectedFields["name"]          = userName
-        if (userDob.isNotBlank())  collectedFields["date of birth"] = userDob
-        if (userCity.isNotBlank()) collectedFields["city"]          = userCity
+        if (userName.isNotBlank())       collectedFields["name"]          = userName
+        if (userDob.isNotBlank()) {
+            collectedFields["date of birth"] = userDob
+            val age = calculateAge(userDob)
+            if (age > 0) collectedFields["age"] = "$age years"
+        }
+        if (userCity.isNotBlank())       collectedFields["city"]          = userCity
+        if (userSpouseName.isNotBlank()) collectedFields["spouse name"]   = userSpouseName
+        if (userPan.isNotBlank())        collectedFields["PAN number"]    = userPan
 
         gemmaEngine = (application as? SahayakApp)?.gemmaEngine
             ?: LocalGemmaEngine(this).also {
@@ -181,7 +195,12 @@ class ConversationActivity : ComponentActivity() {
 
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tts.language = if (userLanguage == "हिंदी") Locale("hi", "IN") else Locale.US
+                val targetLocale = if (userLanguage == "हिंदी") Locale("hi", "IN") else Locale.US
+                tts.language = targetLocale
+                val bestVoice = tts.voices
+                    ?.filter { it.locale.language == targetLocale.language && !it.isNetworkConnectionRequired }
+                    ?.maxByOrNull { it.quality }
+                if (bestVoice != null) tts.voice = bestVoice
                 tts.setSpeechRate(0.9f)
                 tts.setOnUtteranceProgressListener(originalTtsListener)
                 ttsReady = true
@@ -211,27 +230,37 @@ class ConversationActivity : ComponentActivity() {
         val profile  = buildUserProfile()
         val langInst = buildLanguageInstruction()
         sendGreeting(
-            "You are a patient, knowledgeable assistant helping a senior citizen fill out a physical paper form. " +
-            "Your role is to guide them through each field one at a time. " +
-            "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks." +
-            (if (profile.isNotBlank())  "\n\n$profile"  else "") +
-            (if (langInst.isNotBlank()) "\n\n$langInst" else "") +
-            "\n\nThe form contains this text: $formContext\n\n" +
-            "Greet the user briefly by name if you know it. In one sentence say what this form is for. " +
-            "Then move to the very first field: if you already know the answer from the user profile, " +
-            "tell them exactly what to write (e.g. 'For your name, write Riya Sharma'). " +
-            "If the field is something technical or confusing like a Tax ID, PAN number, or form code, " +
-            "briefly explain what it means in simple everyday language before asking. " +
-            "If you do not know the value, ask for just that one piece of information. " +
-            "If you need the user's address or location for a field and it is not in the profile, " +
-            "do NOT ask the user — instead emit exactly $LOCATION_TOKEN on its own line and stop."
+            "You are a patient, knowledgeable assistant helping a senior citizen fill out a physical paper form by hand. " +
+            "Your job is to go through EVERY blank field on the form, one at a time, in order from top to bottom. " +
+            "Do NOT skip any field. Do NOT declare the form complete until every single blank has been addressed.\n\n" +
+            "Rules:\n" +
+            "1. Read the form text carefully and identify ALL blank fields before you begin.\n" +
+            "2. Go through them one by one, top to bottom.\n" +
+            "3. If the value is already in the user profile, say exactly: 'In the [field name] field, write [value].' Do NOT ask — just tell them what to write.\n" +
+            "4. Age fields: if date of birth is in the profile, calculate the age yourself and say 'In the age field, write [calculated age].' Never ask for age if you know the date of birth.\n" +
+            "5. If a field is technical (PAN, Aadhaar, TIN, account number, etc.) AND the value is NOT in the profile, explain what it means in simple language, then ask.\n" +
+            "6. If you do not know the value and it is not technical, ask for it plainly.\n" +
+            "7. After the user provides a value, confirm it and immediately move to the next field.\n" +
+            "8. If the user says 'done', 'okay', 'next', or similar — treat it as confirmation of the current field and move to the next one. Never treat these words as finishing the whole form.\n" +
+            "9. Only emit ##FORM_COMPLETE## after you have addressed EVERY single blank field on the form — not after just one or two fields. Count all the blanks first.\n" +
+            "10. If you need the user's address and it is not in the profile, emit exactly $LOCATION_TOKEN on its own line and stop. Do NOT invent other ##TOKEN## signals.\n\n" +
+            "Example of a good response for a known field: 'In the PAN number field, write ABCDE1234F. Once you have written that, let me know and I will move to the next field.'\n" +
+            "Example of a good response for an unknown field: 'The next field is your bank account number. Could you please tell me your account number?'\n\n" +
+            "Keep responses spoken — no markdown, no bullet points, no asterisks. " +
+            "Be brief for simple fields. For technical fields, explain clearly so the senior understands.\n" +
+            (if (profile.isNotBlank())  "\n$profile\n"  else "") +
+            (if (langInst.isNotBlank()) "\n$langInst\n" else "") +
+            "\nThe form contains this text:\n$formContext\n\n" +
+            "Start by greeting the user briefly by name if you know it, then say in one sentence what this form is for, " +
+            "then immediately start with the very first blank field. Do NOT emit any ##TOKEN## in this first response."
         )
     }
 
     private fun sendScreenGreeting(screenContext: String) {
         sendGreeting(
             "You are a patient, friendly assistant helping a senior citizen understand their phone screen. " +
-            "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
+            "Keep responses clear and spoken — no markdown, no bullet points, no asterisks. " +
+            "Be brief for simple questions (1-2 sentences). For anything confusing, take 3-4 sentences to explain clearly. " +
             "Here is what is currently on their screen:\n$screenContext\n\n" +
             "Greet them warmly, briefly explain what they're looking at, and ask if they have any questions about it."
         )
@@ -240,7 +269,11 @@ class ConversationActivity : ComponentActivity() {
     private fun sendGreeting(prompt: String) {
         thinkingState.value = true
         lifecycleScope.launch(Dispatchers.IO) {
-            val greeting = gemmaEngine.chat(prompt)
+            val raw = gemmaEngine.chat(prompt)
+            val greeting = raw
+                .replace(FIELD_REGEX, "")
+                .replace(TOKEN_REGEX, "")
+                .trim()
             withContext(Dispatchers.Main) {
                 thinkingState.value = false
                 addMessage(greeting, false)
@@ -287,7 +320,8 @@ class ConversationActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val prompt = if (screenContext.isNotBlank()) {
                 "You are a patient, friendly assistant helping a senior citizen understand their phone screen. " +
-                "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
+                "Keep responses clear and spoken — no markdown, no bullet points, no asterisks. " +
+                "Be brief for simple fields (1-2 sentences). For confusing or technical fields, take 3-4 sentences to explain clearly — never leave out information a senior citizen needs to understand what to write. " +
                 "Answer their questions clearly and simply. If something is dangerous, warn them plainly. " +
                 "Here is what is on their screen:\n$screenContext\n\n" +
                 "The user asked: $userText"
@@ -300,15 +334,22 @@ class ConversationActivity : ComponentActivity() {
                 val langInst = buildLanguageInstruction()
                 val profileSection = if (profile.isNotBlank()) "\n\n$profile" else ""
 
-                "You are a patient, knowledgeable assistant helping a senior citizen fill out a physical paper form. " +
-                "Guide them through each field one at a time using these rules:\n" +
-                "1. If you already know the value from the user profile, tell them exactly what to write — do not ask (e.g. 'For Date of Birth, write 15 August 1952').\n" +
-                "2. If the field is something technical or unfamiliar — like Tax ID, PAN number, Aadhaar, TIN, form codes, or legal terms — first explain in one simple sentence what it means, then ask them for it.\n" +
-                "3. If it is a straightforward unknown field, just ask for it plainly.\n" +
-                "4. After the user provides a value, confirm it back and move to the next field.\n" +
-                "5. When every field on the form has been handled, say a brief warm closing (e.g. 'That's everything! You're all done.') and end your response with the exact token ##FORM_COMPLETE## on its own line. Only emit this token when the form is truly finished.\n" +
-                "6. If you need the user's address or location for a field and it is not already in the profile, do NOT ask the user. Instead, output exactly $LOCATION_TOKEN on its own line and stop. Do not output anything else after that token.\n" +
-                "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
+                "You are a patient, knowledgeable assistant helping a senior citizen fill out a physical paper form by hand. " +
+                "Your job is to go through EVERY blank field on the form, one at a time, in order. Do NOT skip any field. " +
+                "Do NOT declare the form complete until every single blank has been addressed.\n" +
+                "Rules:\n" +
+                "1. If the value is already in the user profile, say exactly: 'In the [field name] field, write [value].' Do NOT ask — just tell them what to write.\n" +
+                "2. Age fields: if date of birth is in the profile, calculate the age yourself and say 'In the age field, write [calculated age].' Never ask for age if you know the date of birth.\n" +
+                "3. If a field is technical (PAN, Aadhaar, TIN, account number, legal terms, etc.) AND the value is NOT in the profile, explain what it means simply, then ask.\n" +
+                "4. If it is a straightforward unknown field, just ask for it plainly.\n" +
+                "5. After the user provides a value, confirm it and immediately move to the next field.\n" +
+                "6. If the user says 'done', 'okay', 'next', or similar — treat it as confirmation of the current field and move to the next one. Never treat these words as finishing the whole form.\n" +
+                "7. Only emit ##FORM_COMPLETE## after you have addressed EVERY single blank field on the form — not after just one or two fields.\n" +
+                "8. If you need the user's address or location and it is not in the profile, output exactly $LOCATION_TOKEN on its own line and stop. Do NOT invent other ##TOKEN## signals.\n" +
+                "Example of a good response for a known field: 'In the PAN number field, write ABCDE1234F. Once you have written that, let me know and I will move to the next field.'\n" +
+                "Example of a good response for an unknown field: 'The next field is your bank account number. Could you please tell me your account number?'\n" +
+                "Keep responses spoken — no markdown, no bullet points, no asterisks. " +
+                "Be brief for simple fields. For technical fields, explain clearly so the senior understands. " +
                 "The current year is 2026." +
                 profileSection +
                 (if (langInst.isNotBlank()) "\n\n$langInst" else "") +
@@ -355,12 +396,12 @@ class ConversationActivity : ComponentActivity() {
                 collectedFields[match.groupValues[1].trim()] = match.groupValues[2].trim()
             }
 
-            val isDone = response.contains("##FORM_COMPLETE##")
+            val isDone = FORM_COMPLETE_REGEX.containsMatchIn(response)
             val cleanResponse = response
                 .replace(FIELD_REGEX, "")
-                .replace("##FORM_COMPLETE##", "")
+                .replace(FORM_COMPLETE_REGEX, "")
+                .replace(TOKEN_REGEX, "")
                 .trim()
-
             withContext(Dispatchers.Main) {
                 thinkingState.value = false
                 addMessage(cleanResponse, false)
@@ -479,16 +520,20 @@ class ConversationActivity : ComponentActivity() {
             val langInst = buildLanguageInstruction()
             val profileSection = if (profile.isNotBlank()) "\n\n$profile" else ""
             val prompt =
-                "You are a patient, knowledgeable assistant helping a senior citizen fill out a physical paper form. " +
-                "Guide them through each field one at a time using these rules:\n" +
-                "1. If you already know the value from the user profile, tell them exactly what to write — do not ask.\n" +
-                "2. If the field is technical or unfamiliar, explain it simply then ask.\n" +
-                "3. If it is a straightforward unknown field, just ask for it plainly.\n" +
-                "4. After a value is provided, confirm it and move to the next field.\n" +
-                "5. When every field is handled, say a brief warm closing and end with ##FORM_COMPLETE## on its own line.\n" +
-                "6. If you need the user's address or location for a field and it is not in the profile, " +
-                "do NOT ask the user. Output exactly $LOCATION_TOKEN on its own line and stop.\n" +
-                "Keep responses SHORT (2-3 sentences max) and spoken — no markdown, no bullet points, no asterisks. " +
+                "You are a patient, knowledgeable assistant helping a senior citizen fill out a physical paper form by hand. " +
+                "Your job is to go through EVERY blank field on the form, one at a time, in order. Do NOT skip any field. " +
+                "Do NOT declare the form complete until every single blank has been addressed.\n" +
+                "Rules:\n" +
+                "1. If you already know the value from the user profile, say exactly: 'In the [field name] field, write [value].' Do not ask.\n" +
+                "2. Age fields: if date of birth is in the profile, calculate the age yourself and say 'In the age field, write [calculated age].' Never ask for age if you know the date of birth.\n" +
+                "3. If a field is technical, explain it simply then ask.\n" +
+                "4. If it is a straightforward unknown field, just ask for it plainly.\n" +
+                "5. After a value is provided, confirm it and immediately move to the next field.\n" +
+                "6. Only emit ##FORM_COMPLETE## after you have addressed EVERY single blank field on the form — not after just one or two fields.\n" +
+                "7. If you need the user's address or location and it is not in the profile, output exactly $LOCATION_TOKEN on its own line and stop. Do NOT invent other ##TOKEN## signals.\n" +
+                "Example of a good response for a known field: 'In the PAN number field, write ABCDE1234F. Once you have written that, let me know and I will move to the next field.'\n" +
+                "Keep responses spoken — no markdown, no bullet points, no asterisks. " +
+                "Be brief for simple fields. For technical fields, explain clearly so the senior understands. " +
                 "The current year is 2026." +
                 profileSection +
                 (if (langInst.isNotBlank()) "\n\n$langInst" else "") +
@@ -499,7 +544,7 @@ class ConversationActivity : ComponentActivity() {
             val response = gemmaEngine.chat(prompt)
 
             if (response.contains(LOCATION_TOKEN)) {
-                val cleanForDisplay = response.replace(LOCATION_TOKEN, "").replace(FIELD_REGEX, "").trim()
+                val cleanForDisplay = response.replace(TOKEN_REGEX, "").replace(FIELD_REGEX, "").trim()
                 withContext(Dispatchers.Main) {
                     thinkingState.value = false
                     if (cleanForDisplay.isNotEmpty()) {
@@ -532,7 +577,7 @@ class ConversationActivity : ComponentActivity() {
             val isDone = response.contains("##FORM_COMPLETE##")
             val cleanResponse = response
                 .replace(FIELD_REGEX, "")
-                .replace("##FORM_COMPLETE##", "")
+                .replace(TOKEN_REGEX, "")
                 .trim()
             withContext(Dispatchers.Main) {
                 thinkingState.value = false
@@ -557,11 +602,38 @@ class ConversationActivity : ComponentActivity() {
 
     private fun buildUserProfile(): String {
         val parts = mutableListOf<String>()
-        if (userName.isNotBlank())     parts.add("Name: $userName")
-        if (userDob.isNotBlank())      parts.add("Date of birth: $userDob")
-        if (userCity.isNotBlank())     parts.add("City: $userCity")
-        if (userLanguage.isNotBlank()) parts.add("Preferred language: $userLanguage")
-        return if (parts.isEmpty()) "" else "About the user — ${parts.joinToString(", ")}."
+        if (userName.isNotBlank())       parts.add("Name: $userName")
+        if (userDob.isNotBlank()) {
+            parts.add("Date of birth: $userDob")
+            val age = calculateAge(userDob)
+            if (age > 0) parts.add("Age: $age years")
+        }
+        if (userCity.isNotBlank())       parts.add("City: $userCity")
+        if (userSpouseName.isNotBlank()) parts.add("Spouse name: $userSpouseName")
+        if (userPan.isNotBlank())        parts.add("PAN number: $userPan")
+        if (userLanguage.isNotBlank())   parts.add("Preferred language: $userLanguage")
+        return if (parts.isEmpty()) ""
+        else "IMPORTANT — User profile (use these values directly, do not ask the user for any of these):\n" +
+            parts.joinToString("\n") { "  - $it" }
+    }
+
+    private fun calculateAge(dob: String): Int {
+        return try {
+            val formats = listOf("d MMMM yyyy", "dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd", "dd-MM-yyyy")
+            var birthDate: java.util.Date? = null
+            for (fmt in formats) {
+                try {
+                    birthDate = java.text.SimpleDateFormat(fmt, Locale.ENGLISH).parse(dob)
+                    if (birthDate != null) break
+                } catch (_: Exception) {}
+            }
+            if (birthDate == null) return 0
+            val today = java.util.Calendar.getInstance()
+            val birth = java.util.Calendar.getInstance().also { it.time = birthDate }
+            var age = today.get(java.util.Calendar.YEAR) - birth.get(java.util.Calendar.YEAR)
+            if (today.get(java.util.Calendar.DAY_OF_YEAR) < birth.get(java.util.Calendar.DAY_OF_YEAR)) age--
+            age
+        } catch (_: Exception) { 0 }
     }
 
     private fun buildLanguageInstruction(): String =

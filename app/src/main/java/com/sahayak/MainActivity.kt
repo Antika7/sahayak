@@ -69,9 +69,9 @@ class MainActivity : ComponentActivity() {
 
                             composable(Screen.Welcome.route) {
                                 WelcomeScreen(
-                                    onComplete = { name, lang, dob, city ->
+                                    onComplete = { name, lang, dob, city, spouseName, pan ->
                                         lifecycleScope.launch(Dispatchers.IO) {
-                                            userPreferences.save(name, lang, dob, city)
+                                            userPreferences.save(name, lang, dob, city, spouseName, pan)
                                         }
                                         navController.navigate(Screen.Home.route) {
                                             popUpTo(Screen.Welcome.route) { inclusive = true }
@@ -181,19 +181,23 @@ class MainActivity : ComponentActivity() {
                     onCapture(bitmap)
 
                     lifecycleScope.launch(Dispatchers.IO) {
-                        val ocrText      = gemmaEngine.extractFormText(bitmap)
-                        val userName     = userPreferences.userName.first()     ?: ""
-                        val userLanguage = userPreferences.userLanguage.first()
-                        val userDob      = userPreferences.userDob.first()
-                        val userCity     = userPreferences.userCity.first()
+                        val ocrText        = gemmaEngine.extractFormText(bitmap)
+                        val userName       = userPreferences.userName.first()     ?: ""
+                        val userLanguage   = userPreferences.userLanguage.first()
+                        val userDob        = userPreferences.userDob.first()
+                        val userCity       = userPreferences.userCity.first()
+                        val userSpouseName = userPreferences.userSpouseName.first()
+                        val userPan        = userPreferences.userPan.first()
                         withContext(Dispatchers.Main) {
                             onResult("")
                             val intent = Intent(this@MainActivity, ConversationActivity::class.java).apply {
-                                putExtra(ConversationActivity.EXTRA_FORM_CONTEXT,  ocrText)
-                                putExtra(ConversationActivity.EXTRA_USER_NAME,     userName)
-                                putExtra(ConversationActivity.EXTRA_USER_LANGUAGE, userLanguage)
-                                putExtra(ConversationActivity.EXTRA_USER_DOB,      userDob)
-                                putExtra(ConversationActivity.EXTRA_USER_CITY,     userCity)
+                                putExtra(ConversationActivity.EXTRA_FORM_CONTEXT,   ocrText)
+                                putExtra(ConversationActivity.EXTRA_USER_NAME,      userName)
+                                putExtra(ConversationActivity.EXTRA_USER_LANGUAGE,  userLanguage)
+                                putExtra(ConversationActivity.EXTRA_USER_DOB,       userDob)
+                                putExtra(ConversationActivity.EXTRA_USER_CITY,      userCity)
+                                putExtra(ConversationActivity.EXTRA_USER_SPOUSE,    userSpouseName)
+                                putExtra(ConversationActivity.EXTRA_USER_PAN,       userPan)
                             }
                             startActivity(intent)
                         }
