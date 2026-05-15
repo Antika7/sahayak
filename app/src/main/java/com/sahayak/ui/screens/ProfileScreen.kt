@@ -35,16 +35,20 @@ fun ProfileScreen(
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
-    val savedName     by userPreferences.userName.collectAsState(initial = "")
-    val savedLanguage by userPreferences.userLanguage.collectAsState(initial = "English")
-    val savedDob      by userPreferences.userDob.collectAsState(initial = "")
-    val savedCity     by userPreferences.userCity.collectAsState(initial = "")
+    val savedName       by userPreferences.userName.collectAsState(initial = "")
+    val savedLanguage   by userPreferences.userLanguage.collectAsState(initial = "English")
+    val savedDob        by userPreferences.userDob.collectAsState(initial = "")
+    val savedCity       by userPreferences.userCity.collectAsState(initial = "")
+    val savedSpouseName by userPreferences.userSpouseName.collectAsState(initial = "")
+    val savedPan        by userPreferences.userPan.collectAsState(initial = "")
 
-    var name     by remember(savedName)     { mutableStateOf(savedName ?: "") }
-    var language by remember(savedLanguage) { mutableStateOf(savedLanguage) }
-    var dob      by remember(savedDob)      { mutableStateOf(savedDob) }
-    var city     by remember(savedCity)     { mutableStateOf(savedCity) }
-    var saved    by remember { mutableStateOf(false) }
+    var name       by remember(savedName)       { mutableStateOf(savedName ?: "") }
+    var language   by remember(savedLanguage)   { mutableStateOf(savedLanguage) }
+    var dob        by remember(savedDob)        { mutableStateOf(savedDob) }
+    var city       by remember(savedCity)       { mutableStateOf(savedCity) }
+    var spouseName by remember(savedSpouseName) { mutableStateOf(savedSpouseName) }
+    var pan        by remember(savedPan)        { mutableStateOf(savedPan) }
+    var saved      by remember { mutableStateOf(false) }
 
     val languages = listOf("English", "हिंदी")
     var languageDropdownExpanded by remember { mutableStateOf(false) }
@@ -155,7 +159,37 @@ fun ProfileScreen(
                 modifier = Modifier.fillMaxWidth(),
                 textStyle = MaterialTheme.typography.bodyLarge,
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                shape = RoundedCornerShape(12.dp),
+                colors = fieldColors
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text("Spouse's name (if any):", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+            OutlinedTextField(
+                value = spouseName,
+                onValueChange = { spouseName = it; saved = false },
+                placeholder = { Text("e.g. Sunita Sharma", style = MaterialTheme.typography.bodyLarge) },
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = MaterialTheme.typography.bodyLarge,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                shape = RoundedCornerShape(12.dp),
+                colors = fieldColors
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text("Your PAN number:", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+            OutlinedTextField(
+                value = pan,
+                onValueChange = { pan = it.uppercase(); saved = false },
+                placeholder = { Text("e.g. ABCDE1234F", style = MaterialTheme.typography.bodyLarge) },
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = MaterialTheme.typography.bodyLarge,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done),
                 shape = RoundedCornerShape(12.dp),
                 colors = fieldColors
             )
@@ -173,7 +207,7 @@ fun ProfileScreen(
             Button(
                 onClick = {
                     scope.launch {
-                        userPreferences.save(name.trim(), language, dob.trim(), city.trim())
+                        userPreferences.save(name.trim(), language, dob.trim(), city.trim(), spouseName.trim(), pan.trim())
                         saved = true
                     }
                 },
