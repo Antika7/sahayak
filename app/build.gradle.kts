@@ -54,6 +54,7 @@ dependencies {
     // LiteRT LLM (Gemma 4 on-device inference)
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.11.0")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-common:19.1.0")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     // ML Kit OCR — reads text from the captured form image
     implementation("com.google.mlkit:text-recognition:16.0.1")
