@@ -87,6 +87,8 @@ Update this constant if you push the file to a different location.
 
 ## Architecture
 
+![High-level architecture](Architecture-HighLevel.jpg)
+
 ```
 SahayakApp                  — Application singleton; owns the LocalGemmaEngine instance
 │
