@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresPermission
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -50,6 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
+// Converts GPS coordinates to a human-readable address string using Geocoder
 private fun resolveAddress(
     context: Context,
     lat: Double,
@@ -87,6 +89,7 @@ private fun resolveAddress(
 
 data class ChatMessage(val text: String, val isUser: Boolean)
 
+// Manages a voice-first, back-and-forth conversation between the user and the Gemma LLM.
 class ConversationActivity : ComponentActivity() {
 
     private lateinit var tts: TextToSpeech
@@ -97,10 +100,15 @@ class ConversationActivity : ComponentActivity() {
     private val messages = mutableStateListOf<ChatMessage>()
     private var listeningState = mutableStateOf(false)
     private var thinkingState = mutableStateOf(false)
+
     private var ttsReady = false
     private var isSpeaking = false
-    private var formContext   = ""
-    private var screenContext = ""
+
+    // Context strings
+    private var formContext   = ""   // OCR text from the photographed form (Form Helper feature)
+    private var screenContext = ""   // visible text from the Accessibility Service (Screen Helper feature)
+
+    // User profile fields pre-populated from UserPreferences so the LLM can fill known fields without asking the user each time.
     private var userName      = ""
     private var userLanguage  = "English"
     private var userDob       = ""
@@ -124,6 +132,8 @@ class ConversationActivity : ComponentActivity() {
         const val EXTRA_USER_CITY      = "user_city"
         const val EXTRA_USER_SPOUSE    = "user_spouse"
         const val EXTRA_USER_PAN       = "user_pan"
+
+        // LLM embeds these values in responses
         private val FIELD_REGEX    = Regex("FIELD:([^=]+)=(.+)", RegexOption.MULTILINE)
         private val MARKDOWN_REGEX = Regex("[*_#`]")
         private val TOKEN_REGEX    = Regex("##[A-Z_]+##?")
@@ -131,6 +141,7 @@ class ConversationActivity : ComponentActivity() {
         private const val LOCATION_TOKEN = "##REQUEST_LOCATION##"
     }
 
+    // TTS listener used during normal conversation
     private val originalTtsListener = object : UtteranceProgressListener() {
         override fun onStart(utteranceId: String?) { isSpeaking = true }
         override fun onDone(utteranceId: String?) {
@@ -148,6 +159,7 @@ class ConversationActivity : ComponentActivity() {
         if (granted) startListening() else addMessage("Microphone permission is needed to hear you. Please grant it in Settings.", false)
     }
 
+    // Requests location; proceeds to GPS fetch if granted.
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -157,6 +169,7 @@ class ConversationActivity : ComponentActivity() {
         } else {
             locationState = LocationState.IDLE
             thinkingState.value = false
+//            TO DO : Improve translation
             val msg = if (userLanguage == "हिंदी")
                 "मुझे आपका पता जानने के लिए लोकेशन अनुमति चाहिए। कृपया सेटिंग में अनुमति दें, फिर जारी रखें।"
             else
@@ -197,11 +210,12 @@ class ConversationActivity : ComponentActivity() {
             if (status == TextToSpeech.SUCCESS) {
                 val targetLocale = if (userLanguage == "हिंदी") Locale("hi", "IN") else Locale.US
                 tts.language = targetLocale
+                // Prefer the highest-quality offline voice for the target language to be independent of network connection.
                 val bestVoice = tts.voices
                     ?.filter { it.locale.language == targetLocale.language && !it.isNetworkConnectionRequired }
                     ?.maxByOrNull { it.quality }
                 if (bestVoice != null) tts.voice = bestVoice
-                tts.setSpeechRate(0.9f)
+                tts.setSpeechRate(0.9f)   // Slightly slower than default for senior users.
                 tts.setOnUtteranceProgressListener(originalTtsListener)
                 ttsReady = true
                 if (screenContext.isNotBlank()) {
@@ -226,6 +240,12 @@ class ConversationActivity : ComponentActivity() {
         }
     }
 
+    /*
+        Builds and sends the opening system prompt for Form Helper mode.
+        The prompt includes the full OCR form text, the user profile, and strict
+        rules that force the LLM to visit every blank field sequentially without
+        skipping — a critical constraint for senior users who need guided completion.
+     */
     private fun sendInitialGreeting(formContext: String) {
         val profile  = buildUserProfile()
         val langInst = buildLanguageInstruction()
@@ -256,6 +276,7 @@ class ConversationActivity : ComponentActivity() {
         )
     }
 
+    // Prompt for Screen Helper mode.
     private fun sendScreenGreeting(screenContext: String) {
         sendGreeting(
             "You are a patient, friendly assistant helping a senior citizen understand their phone screen. " +
@@ -282,6 +303,7 @@ class ConversationActivity : ComponentActivity() {
         }
     }
 
+    // Central handler for all user input (voice or typed).
     fun handleUserSpeech(userText: String) {
         // Gate 1: intercept yes/no confirmation for detected location
         if (locationState == LocationState.AWAITING_CONFIRMATION) {
@@ -292,6 +314,7 @@ class ConversationActivity : ComponentActivity() {
             if (confirmed) {
                 locationState = LocationState.IDLE
                 collectedFields["address / location"] = pendingLocationAddress
+                // Also backfill the city if it wasn't provided at onboarding.
                 if (userCity.isBlank() && pendingLocationLocality.isNotBlank()) {
                     userCity = pendingLocationLocality
                     collectedFields["city"] = pendingLocationLocality
@@ -302,6 +325,7 @@ class ConversationActivity : ComponentActivity() {
                 pendingLocationLocality = ""
                 continueFormWithInjectedContext(injected)
             } else {
+                // User rejected the detected address — reset state and ask them to type it.
                 locationState = LocationState.IDLE
                 pendingLocationAddress = ""
                 pendingLocationLocality = ""
@@ -360,7 +384,6 @@ class ConversationActivity : ComponentActivity() {
 
             val response = gemmaEngine.chat(prompt)
 
-            // Gate 2: intercept ##REQUEST_LOCATION## before normal processing
             if (response.contains(LOCATION_TOKEN)) {
                 val cleanForDisplay = response
                     .replace(LOCATION_TOKEN, "")
@@ -371,6 +394,8 @@ class ConversationActivity : ComponentActivity() {
                     if (cleanForDisplay.isNotEmpty()) {
                         addMessage(cleanForDisplay, false)
                         val cleanTts = cleanForDisplay.replace(MARKDOWN_REGEX, "")
+                        // Swap in a one-shot listener that triggers location fetch after
+                        // the pre-fetch speech ends, then restores the original listener.
                         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                             override fun onStart(utteranceId: String?) {}
                             override fun onDone(utteranceId: String?) {
@@ -391,7 +416,6 @@ class ConversationActivity : ComponentActivity() {
                 }
                 return@launch
             }
-
             FIELD_REGEX.findAll(response).forEach { match ->
                 collectedFields[match.groupValues[1].trim()] = match.groupValues[2].trim()
             }
@@ -423,7 +447,6 @@ class ConversationActivity : ComponentActivity() {
             }
         }
     }
-
     private fun requestLocationForForm() {
         val fine   = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
         val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -435,7 +458,7 @@ class ConversationActivity : ComponentActivity() {
             )
         }
     }
-
+    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
     private fun fetchLocationForForm() {
         locationState = LocationState.FETCHING
         thinkingState.value = true
@@ -453,6 +476,7 @@ class ConversationActivity : ComponentActivity() {
                         }
                     )
                 } else {
+                    // if getCurrentLocation returned null try last known location.
                     fusedClient.lastLocation
                         .addOnSuccessListener { last ->
                             if (last != null) {
@@ -483,7 +507,6 @@ class ConversationActivity : ComponentActivity() {
                 }
             }
     }
-
     private fun geocodeAndConfirm(address: String, locality: String) {
         pendingLocationAddress = address
         pendingLocationLocality = locality
@@ -498,6 +521,7 @@ class ConversationActivity : ComponentActivity() {
         speak(msg)
     }
 
+    // GPS or geocoding failed then ask the user to type their address instead.
     private fun onLocationFetchFailed(reason: String) {
         locationState = LocationState.IDLE
         thinkingState.value = false
@@ -509,7 +533,6 @@ class ConversationActivity : ComponentActivity() {
         addMessage(msg, false)
         speak(msg)
     }
-
     private fun continueFormWithInjectedContext(injectedContext: String) {
         thinkingState.value = true
         lifecycleScope.launch(Dispatchers.IO) {
@@ -600,6 +623,7 @@ class ConversationActivity : ComponentActivity() {
         }
     }
 
+    // Assembles the user profile section injected into every LLM prompt
     private fun buildUserProfile(): String {
         val parts = mutableListOf<String>()
         if (userName.isNotBlank())       parts.add("Name: $userName")
@@ -617,6 +641,7 @@ class ConversationActivity : ComponentActivity() {
             parts.joinToString("\n") { "  - $it" }
     }
 
+    // Calculate age based on DOB
     private fun calculateAge(dob: String): Int {
         return try {
             val formats = listOf("d MMMM yyyy", "dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd", "dd-MM-yyyy")
@@ -636,11 +661,13 @@ class ConversationActivity : ComponentActivity() {
         } catch (_: Exception) { 0 }
     }
 
+    // TO DO : Improve language handling
     private fun buildLanguageInstruction(): String =
         if (userLanguage == "हिंदी")
             "IMPORTANT: The user speaks Hindi. Respond entirely in Hindi (Devanagari script)."
         else ""
 
+    // Strips markdown before speaking. TTS reads asterisks and hashes aloud otherwise.
     private fun speak(text: String) {
         val clean = text.replace(MARKDOWN_REGEX, "")
         tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "ai_response")
@@ -704,7 +731,7 @@ class ConversationActivity : ComponentActivity() {
                 Log.d(TAG, "onResults: $matches")
                 val text = matches?.firstOrNull()
                 if (!text.isNullOrBlank()) handleUserSpeech(text)
-                else startListening()
+                else startListening()   // Empty result — keep listening.
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -717,6 +744,7 @@ class ConversationActivity : ComponentActivity() {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (userLanguage == "हिंदी") "hi-IN" else Locale.US.toString())
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            // 1.5 s of silence signals end of utterance — long enough for seniors who speak slowly.
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
         }
         speechRecognizer?.startListening(intent)
@@ -750,6 +778,7 @@ fun ConversationScreen(
         }
     }
 
+    // Auto-scroll
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
@@ -846,6 +875,7 @@ fun ConversationScreen(
     }
 }
 
+// Chat bubbles
 @Composable
 fun MessageBubble(message: ChatMessage) {
     Row(
