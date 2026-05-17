@@ -16,17 +16,26 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
+//   AI subsystems:
+//   1. LiteRT LLM (Gemma) — on-device large language model for chat, form analysis, and scam detection. Runs entirely offline; no network calls.
+//   2. ML Kit Text Recognition — OCR engine that extracts printed text from Bitmaps before passing it to the LLM as context.
+//
+// A single instance is created in SahayakApp and shared across the process lifetime to avoid reloading the model.
 class LocalGemmaEngine(private val context: Context) {
 
     private companion object {
         const val TAG = "LocalGemmaEngine"
+        // Model file is pushed to the device manually (e.g. via adb push) during development
+        // In production this path would come from a download manager.
         const val DEFAULT_MODEL_PATH = "/data/local/tmp/gemma-4-E2B-it.litertlm"
     }
-
     private var engine: Engine? = null
     private var conversation: Conversation? = null
+
+    // OCR client is only allocated when first needed (FormHelper flow)
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
+    // Create a LiteRT Engine using GPU (primary) and CPU fallback
     private fun tryCreateEngine(modelPath: String, backend: Backend): Engine? {
         return try {
             val config = EngineConfig(
@@ -41,18 +50,20 @@ class LocalGemmaEngine(private val context: Context) {
         }
     }
 
+    // Load Gemma model
     suspend fun initialize(modelPath: String = DEFAULT_MODEL_PATH): Boolean = withContext(Dispatchers.IO) {
         if (conversation != null) return@withContext true
         try {
             if (engine == null) {
                 engine = tryCreateEngine(modelPath, Backend.GPU())
                     ?: tryCreateEngine(modelPath, Backend.CPU())
-                    ?: return@withContext false
+                    ?: return@withContext false   // Both backends failed — model unusable.
             }
             conversation = engine!!.createConversation()
             Log.d(TAG, "Gemma Engine initialized successfully.")
             true
         } catch (e: OutOfMemoryError) {
+            // Model is ~2 GB; OOM is a realistic failure on low-RAM devices.
             Log.e(TAG, "OOM during model initialization.", e)
             false
         } catch (e: Exception) {
@@ -61,11 +72,13 @@ class LocalGemmaEngine(private val context: Context) {
         }
     }
 
+    // Sends a prompt to the active Conversation and concatenates all Text content
     private fun sendAndExtract(conv: Conversation, prompt: String): String =
         conv.sendMessage(prompt).contents.contents
             .filterIsInstance<Content.Text>()
             .joinToString("") { it.text }
 
+    // Wraps ML Kit's callback-based OCR API in a coroutine
     private suspend fun runOcr(bitmap: Bitmap): String = suspendCancellableCoroutine { cont ->
         val image = InputImage.fromBitmap(bitmap, 0)
         recognizer.process(image)
@@ -74,12 +87,12 @@ class LocalGemmaEngine(private val context: Context) {
             }
             .addOnFailureListener { e ->
                 Log.e(TAG, "OCR failed.", e)
-                cont.resume("")
+                cont.resume("")   // Empty string rather than propagating the exception.
             }
     }
 
+    // Entry point used by MainActivity.takePhoto() to extract form text
     suspend fun extractFormText(bitmap: Bitmap): String = runOcr(bitmap)
-
     suspend fun chat(message: String): String = withContext(Dispatchers.IO) {
         val conv = conversation ?: return@withContext "I'm not ready yet. Please wait a moment."
         try {
@@ -90,10 +103,17 @@ class LocalGemmaEngine(private val context: Context) {
         }
     }
 
+    // Combined OCR + LLM analysis for the Form Helper feature.
+    /*
+        Runs OCR on the image first, then injects the extracted text into a
+        structured prompt that instructs the model to explain the form step-by-step
+        and flag sensitive fields (SSN, bank details, etc.) for the senior user.
+     */
     suspend fun analyzeForm(imageBitmap: Bitmap, userContext: String): String = withContext(Dispatchers.IO) {
         val conv = conversation ?: return@withContext "Error: AI not initialized."
         try {
             val ocrText = runOcr(imageBitmap)
+            // Gracefully handle the case where OCR found nothing (blank page, bad lighting).
             val formContext = if (ocrText.isBlank()) {
                 "The user photographed a form but no text could be extracted. $userContext"
             } else {
@@ -118,28 +138,7 @@ class LocalGemmaEngine(private val context: Context) {
         }
     }
 
-    suspend fun analyzeScreen(userContext: String): String = withContext(Dispatchers.IO) {
-        val conv = conversation ?: return@withContext "Error: AI not initialized."
-        try {
-            val prompt = """
-                You are a cybersecurity expert protecting a senior citizen.
-                Analyze the following screen content.
-                Context: $userContext
-
-                Strictly check for signs of phishing, scams, urgent fake warnings, or malicious requests.
-                If it looks like a scam, output a clear, urgent WARNING in simple terms.
-                If it looks safe, briefly summarize what is on the screen.
-            """.trimIndent()
-            sendAndExtract(conv, prompt)
-        } catch (e: OutOfMemoryError) {
-            Log.e(TAG, "OOM during screen analysis.", e)
-            "I'm out of memory analyzing this screen. Please close some apps and try again."
-        } catch (e: Exception) {
-            Log.e(TAG, "Error analyzing screen.", e)
-            "An error occurred while analyzing the screen."
-        }
-    }
-
+    // Scam-detection path used by the Sentinel overlay
     suspend fun analyzeScreenContext(context: ScreenContext): ScreenAnalysisResult = withContext(Dispatchers.IO) {
         val conv = conversation ?: return@withContext ScreenAnalysisResult(
             explanation = "AI not initialized. Please wait and try again.",
@@ -199,6 +198,7 @@ class LocalGemmaEngine(private val context: Context) {
         }
     }
 
+    // Parses the structured KEY: value response from analyzeScreenContext's prompt.
     private fun parseScreenAnalysis(response: String): ScreenAnalysisResult {
         val lines = response.trim().lines()
         val map = mutableMapOf<String, String>()
@@ -220,6 +220,7 @@ class LocalGemmaEngine(private val context: Context) {
             map["RISK"]?.contains("NONE", ignoreCase = true) == true -> RiskLevel.NONE
             else -> RiskLevel.LOW
         }
+        // Treat "none" and blank as absent
         val riskReason = map["RISK_REASON"]?.takeIf {
             it.isNotBlank() && !it.equals("none", ignoreCase = true)
         }
@@ -232,7 +233,6 @@ class LocalGemmaEngine(private val context: Context) {
             suggestedAction = suggestedAction
         )
     }
-
     fun close() {
         conversation?.close()
         conversation = null

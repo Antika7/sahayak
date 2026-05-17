@@ -35,6 +35,8 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
 
+//   1. A draggable floating button always visible above all other apps.
+//   2. A result card overlay shown at the bottom of the screen after analysis.
 class FloatingWindowService : Service() {
 
     private lateinit var windowManager: WindowManager
@@ -45,7 +47,6 @@ class FloatingWindowService : Service() {
     companion object {
         private const val TAG = "FloatingWindowService"
         private const val CHANNEL_ID = "sahayak_sentinel_channel"
-
         val isRunning = mutableStateOf(false)
     }
 
@@ -74,6 +75,7 @@ class FloatingWindowService : Service() {
         setupFloatingButton()
     }
 
+    // TTS is initialised asynchronously
     private fun initTts() {
         tts = TextToSpeech(this) { status ->
             ttsReady = (status == TextToSpeech.SUCCESS)
@@ -94,6 +96,7 @@ class FloatingWindowService : Service() {
         startForeground(1, notification)
     }
 
+    // Creates the draggable floating button
     private fun setupFloatingButton() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
@@ -160,6 +163,7 @@ class FloatingWindowService : Service() {
         }
     }
 
+    // Entry point for the analysis flow
     private fun handleCheckClick() {
         if (isAnalyzing) return
 
@@ -196,12 +200,12 @@ class FloatingWindowService : Service() {
         floatingButton.alpha = if (analyzing) 0.4f else 1.0f
     }
 
+    // Maps RiskLevel to a background colour for the result card.
     private data class ResultUI(val bgColor: Int)
-
     private fun resultUi(risk: RiskLevel) = when (risk) {
-        RiskLevel.NONE -> ResultUI(Color.parseColor("#1565C0"))
-        RiskLevel.LOW -> ResultUI(Color.parseColor("#E65100"))
-        RiskLevel.HIGH -> ResultUI(Color.parseColor("#B71C1C"))
+        RiskLevel.NONE -> ResultUI(Color.parseColor("#1565C0"))   // blue  — safe
+        RiskLevel.LOW  -> ResultUI(Color.parseColor("#E65100"))   // orange — caution
+        RiskLevel.HIGH -> ResultUI(Color.parseColor("#B71C1C"))   // red   — warning
     }
 
     private fun showResultOverlay(result: ScreenAnalysisResult) {
@@ -217,7 +221,7 @@ class FloatingWindowService : Service() {
 
         val titleText = when (result.riskLevel) {
             RiskLevel.NONE -> "Safe"
-            RiskLevel.LOW -> "Caution"
+            RiskLevel.LOW  -> "Caution"
             RiskLevel.HIGH -> "WARNING"
         }
 
@@ -246,7 +250,7 @@ class FloatingWindowService : Service() {
             val riskView = TextView(this).apply {
                 text = result.riskReason
                 textSize = 14f
-                setTextColor(Color.parseColor("#FFCDD2"))
+                setTextColor(Color.parseColor("#FFCDD2"))   // light red — visually distinct from explanation
                 setPadding(0, 8, 0, 0)
                 setTypeface(null, Typeface.ITALIC)
             }
@@ -257,7 +261,7 @@ class FloatingWindowService : Service() {
             val actionView = TextView(this).apply {
                 text = "Next: ${result.suggestedAction}"
                 textSize = 14f
-                setTextColor(Color.parseColor("#E3F2FD"))
+                setTextColor(Color.parseColor("#E3F2FD"))   // light blue — actionable item
                 setPadding(0, 8, 0, 0)
             }
             detailContainer.addView(actionView)
@@ -271,6 +275,7 @@ class FloatingWindowService : Service() {
             setPadding(0, 12, 0, 0)
         }
 
+        // Toggles the detail section; label flips between "Why?" and "Less".
         val whyBtn = TextView(this).apply {
             text = "Why?"
             textSize = 14f
@@ -296,6 +301,7 @@ class FloatingWindowService : Service() {
             setOnClickListener { speakResult(result) }
         }
 
+        // Follow-up questions about what's on their screen.
         val tellMoreBtn = TextView(this).apply {
             text = "Ask more"
             textSize = 14f
@@ -332,14 +338,16 @@ class FloatingWindowService : Service() {
         resultOverlay = card
         windowManager.addView(card, overlayParams)
 
+        // Auto-speak for high-risk results
         if (result.riskLevel == RiskLevel.HIGH) {
             speakResult(result)
         }
     }
 
+    // Reads user preferences from DataStore (IO thread), then launches ConversationActivity
     private fun launchConversation() {
         val context = lastScreenContext ?: return
-        lastScreenContext = null
+        lastScreenContext = null   // Clear to avoid re-use after navigation.
         val screenSummary = buildString {
             appendLine("App: ${context.appPackage ?: "Unknown"}")
             appendLine("Screen text: ${context.visibleText.take(1500)}")
