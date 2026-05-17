@@ -1,5 +1,7 @@
 # Sahayak
 
+**[View project website](https://sahayak-lake.vercel.app/)**
+
 Sahayak is a 100% offline, privacy-first Android app designed to help senior citizens navigate the digital and physical world safely. All AI inference runs on-device using Google's Gemma via the LiteRT LLM runtime — no data is ever sent to the cloud.
 
 ## Features
