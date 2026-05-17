@@ -39,9 +39,16 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
+    // For form photo capture
     private val shutterSound = MediaActionSound()
+
+    // For the form helper context
     var imageCapture: ImageCapture? = null
+
+    // Shared AI inference engine
     private lateinit var gemmaEngine: LocalGemmaEngine
+
+    // User info and preferences
     private lateinit var userPreferences: UserPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,6 +62,7 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 var startDestination by remember { mutableStateOf<String?>(null) }
 
+                // Onetime profile setup
                 LaunchedEffect(Unit) {
                     val savedName = userPreferences.userName.first()
                     startDestination = if (savedName.isNullOrBlank()) Screen.Welcome.route else Screen.Home.route
@@ -66,7 +74,6 @@ class MainActivity : ComponentActivity() {
                 ) {
                     startDestination?.let { destination ->
                         NavHost(navController = navController, startDestination = destination) {
-
                             composable(Screen.Welcome.route) {
                                 WelcomeScreen(
                                     onComplete = { name, lang, dob, city, spouseName, pan ->
@@ -79,7 +86,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                             }
-
+                            // Central dashboard
                             composable(Screen.Home.route) {
                                 HomeHubScreen(
                                     userPreferences = userPreferences,
@@ -90,6 +97,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
+                            // Profile
                             composable(Screen.Profile.route) {
                                 ProfileScreen(
                                     userPreferences = userPreferences,
@@ -97,16 +105,22 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
+                            // Form Helper
                             composable(Screen.FormHelper.route) {
                                 LaunchedEffect(Unit) { requestCameraPermission() }
                                 FormHelperScreen(
                                     onBack = { navController.popBackStack() },
+                                    // onResult is unused here because takePhoto() launches
+                                    // ConversationActivity directly once OCR finishes.
                                     onResult = { /* unused: ConversationActivity launched directly from takePhoto */ },
                                     takePhoto = { onCapture, onResult -> takePhoto(onCapture, onResult) },
+                                    // FormHelperScreen calls this to register its ImageCapture
+                                    // use-case so takePhoto() can reference it.
                                     setImageCapture = { imageCapture = it }
                                 )
                             }
 
+                            // Scam-detection
                             composable(Screen.Sentinel.route) {
                                 SentinelStatusScreen(
                                     onBack = { navController.popBackStack() },
@@ -114,6 +128,7 @@ class MainActivity : ComponentActivity() {
                                     isSentinelActive = FloatingWindowService.isRunning.value,
                                     onStopSentinel = { stopSentinel() },
                                     isAccessibilityEnabled = isScamAccessibilityEnabled(),
+                                    // enable ScamDetectorAccessibilityService manually.
                                     onOpenAccessibilitySettings = {
                                         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                                     }
@@ -133,13 +148,11 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "Camera permission is required.", Toast.LENGTH_LONG).show()
         }
     }
-
     private fun requestCameraPermission() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
-
     private fun checkOverlayPermissionAndStart() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
@@ -148,25 +161,19 @@ class MainActivity : ComponentActivity() {
         }
         startService(Intent(this, FloatingWindowService::class.java))
     }
-
     private fun stopSentinel() {
         stopService(Intent(this, FloatingWindowService::class.java))
     }
-
     private fun isScamAccessibilityEnabled(): Boolean {
         val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
         val enabled = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
         return enabled.any { it.id.contains("ScamDetectorAccessibilityService", ignoreCase = true) }
     }
-
-    // onCapture fires immediately with the bitmap (so FormHelperScreen can show frozen frame)
-    // onResult fires when OCR is done (clears the analyzing state)
     private fun takePhoto(onCapture: (Bitmap) -> Unit, onResult: (String) -> Unit) {
         val capture = imageCapture ?: run {
             onResult("Camera not ready. Please wait and try again.")
             return
         }
-
         capture.takePicture(
             ContextCompat.getMainExecutor(this),
             object : ImageCapture.OnImageCapturedCallback() {
@@ -180,6 +187,7 @@ class MainActivity : ComponentActivity() {
 
                     onCapture(bitmap)
 
+                    // Run OCR and user-preference
                     lifecycleScope.launch(Dispatchers.IO) {
                         val ocrText        = gemmaEngine.extractFormText(bitmap)
                         val userName       = userPreferences.userName.first()     ?: ""
@@ -188,8 +196,14 @@ class MainActivity : ComponentActivity() {
                         val userCity       = userPreferences.userCity.first()
                         val userSpouseName = userPreferences.userSpouseName.first()
                         val userPan        = userPreferences.userPan.first()
+
                         withContext(Dispatchers.Main) {
+                            // Clear the analyzing state on the screen.
                             onResult("")
+
+                            // Launch ConversationActivity with the OCR text and full user
+                            // context so the AI assistant can pre-fill or explain the form
+                            // using the user's own personal details.
                             val intent = Intent(this@MainActivity, ConversationActivity::class.java).apply {
                                 putExtra(ConversationActivity.EXTRA_FORM_CONTEXT,   ocrText)
                                 putExtra(ConversationActivity.EXTRA_USER_NAME,      userName)
