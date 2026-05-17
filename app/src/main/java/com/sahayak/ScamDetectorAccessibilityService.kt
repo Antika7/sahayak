@@ -6,6 +6,7 @@ import android.text.InputType
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
+// Accessibility Service that reads the current window's view hierarchy on demand
 class ScamDetectorAccessibilityService : AccessibilityService() {
 
     companion object {
@@ -39,6 +40,7 @@ class ScamDetectorAccessibilityService : AccessibilityService() {
 
     fun getScreenText(): String = getScreenContext().visibleText
 
+    // Builds a ScreenContext from the active window's view hierarchy.
     fun getScreenContext(): ScreenContext {
         val root = rootInActiveWindow ?: return ScreenContext("", null, false, false, emptyList())
         val appPackage = root.packageName?.toString()
